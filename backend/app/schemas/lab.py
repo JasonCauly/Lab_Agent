@@ -18,8 +18,8 @@ class LabResponse(BaseModel):
 class LabCreateRequest(BaseModel):
     name: str
     description: str | None = None
-    location: str | None = None
     img: str | None = None
+    location: str | None = None
     capacity: int = 0
     open_time: str | None = None
     close_time: str | None = None
