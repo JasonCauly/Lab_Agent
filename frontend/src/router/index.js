@@ -21,9 +21,9 @@ const router = createRouter({
           component: () => import('@/views/Lab.vue')
         },
         {
-          path: 'equ',
-          name: 'Equ',
-          component: () => import('@/views/Equ.vue')
+          path: 'equipment',
+          name: 'Equipment',
+          component: () => import('@/views/Equipment.vue')
         },
         {
           path: 'user',
