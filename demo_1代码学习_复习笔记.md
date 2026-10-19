@@ -9280,7 +9280,1735 @@ const loadEquipment = async () => {
 
 但“业务失败”与“Promise 拒绝”仍要区分：当前 request.js 对 HTTP 200 且 data.code 非 200 的响应会显示提示；除 code 为 401 的分支外，它仍返回业务对象。所以某些业务错误不会进入这里的 catch，而是由 if (res.code === 200) 阻止赋值。不要误记为“所有非 200 业务码都会进入 catch”。
 
-__CHAPTER_15_CONTINUE__
+### 15.13 实验室介绍和图片预览怎样显示
+
+页面标题：
+
+```html
+<span>{{ lab?.name || '实验室' }}设备列表</span>
+```
+
+刚进入页面时 lab 为 null，lab?.name 使用可选链访问：lab 缺失时得到 undefined，不继续读取 name，随后 || 采用“实验室”。数据回来后 lab.value 被赋值，Vue 更新标题。
+
+介绍区域的 v-if="lab" 则表示：有实验室对象后，才创建这一块内容。它没有检查实验室的启用状态，只检查对象是否存在。
+
+设备图片使用了 Element Plus 的 el-image：
+
+```html
+<el-image
+  v-if="row.img"
+  :src="row.img"
+  :preview-src-list="[row.img]"
+  :preview-teleported="true"
+/>
+```
+
+这里 row 来自表格列的作用域插槽：
+
+```html
+<template #default="{ row }">
+  <!-- 根据当前这一行的 row 自定义单元格 -->
+</template>
+```
+
+#default 是默认插槽名，{ row } 是从组件传入的插槽数据中取出 row。每一行数据都可以据此画出自己的图片或按钮。
+
+src 是缩略图地址；preview-src-list 要求一个数组，所以这里用 [row.img] 把单个地址包起来。preview-teleported 为 true 时，预览层挂载到 body，有助于避免部分父容器样式对预览层的影响。属性含义见 [Element Plus Image](https://element-plus.org/en-US/component/image)。
+
+这次增加的是图片展示和预览。图片地址仍来自之前的文件上传及资源资料保存流程，没有新增一套上传接口。能否显示还取决于文件是否存在、地址是否正确、静态文件代理是否正常。
+
+### 15.14 设备状态标签与按钮禁用有细微差别
+
+状态标签使用：
+
+```html
+<el-tag :type="row.status === 1 ? 'success' : 'danger'">
+  {{ row.status === 1 ? '正常' : '维修' }}
+</el-tag>
+```
+
+=== 是严格相等，数字 1 才会按这里的规则显示为正常。当前 EquipmentResponse 把 status 定义为 int，模型注释约定 0 为维修、1 为正常。
+
+按钮使用的是：
+
+```html
+<el-button :disabled="!row.status" @click="hanldeReserveEquipment(row)">
+  预约
+</el-button>
+```
+
+! 表示取反。数字 0 是假值，!0 为 true，所以按钮禁用；数字 1 是真值，!1 为 false，所以按钮可点击。
+
+在“status 只可能是 0 或 1”的前提下，两处逻辑一致。但当前后端只是 int 类型，没有把允许值限定为 0、1。若出现数字 2，标签会显示“维修”，按钮却不会禁用。
+
+若希望只允许状态 1 操作，前端可参考 :disabled="row.status !== 1"，后端同时明确状态允许值及业务规则。这是整理建议，当前源码仍使用 !row.status。
+
+还有两个层次要分清：
+
+- 当前设备列表会显示维修设备，没有通过查询条件把它们隐藏。
+- 禁用按钮只是界面行为；将来真正预约时，还需要后端重新查询状态，并判断实验室、时间和可用数量等实际业务条件。
+
+不要把“按钮可以点”理解成“预约已经成功”。
+
+### 15.15 分页、返回结构与 ?? 的用途
+
+设备页使用：
+
+```html
+<el-pagination
+  v-model:current-page="params.page"
+  v-model:page-size="params.page_size"
+  :total="total"
+  background
+  layout="total, prev, pager, next"
+  @current-change="loadEquipment"
+/>
+```
+
+点击下一页后，当前页更新到 params.page，事件调用 loadEquipment；请求仍携带原来的 lab_id，所以查询范围还是同一个实验室。
+
+equipment_service.py 的筛选先于 count、offset 和 limit：
+
+```python
+query = db.query(Equipment)
+if lab_id is not None:
+    query = query.filter(Equipment.lab_id == lab_id)
+if keywords:
+    query = query.filter(Equipment.name.ilike(f"%{keywords}%"))
+total = query.count()
+```
+
+因此 total 是当前筛选条件下的设备记录总数。它不是所有实验室的总数，也不是把每条记录的 quantity 加在一起。quantity 为 10 的一条记录，仍只计为一条列表记录。
+
+后续 offset((page - 1) * page_size) 跳过前面页的数据，limit(page_size) 限制当前页条数。返回前再为每条设备补充 lab_name，这部分沿用第 14 节逻辑。
+
+两个请求的结构可以用下面的示意 JSON 对照；内容是假设的数据：
+
+```json
+{
+  "code": 200,
+  "message": "请求成功",
+  "data": {
+    "id": 8,
+    "name": "计算机实验室",
+    "capacity": 20,
+    "status": true
+  }
+}
+```
+
+上面是详情结构的简化示意，省略了部分字段。分页则是：
+
+```json
+{
+  "code": 200,
+  "message": "请求成功",
+  "data": {
+    "list": [
+      {
+        "id": 21,
+        "lab_id": 8,
+        "lab_name": "计算机实验室",
+        "name": "工作站",
+        "quantity": 10,
+        "status": 1
+      }
+    ],
+    "total": 1
+  }
+}
+```
+
+所以详情写 lab.value = res.data，列表写 tableData.value = res.data.list。
+
+当前设备页进一步使用：
+
+```js
+tableData.value = res.data?.list ?? []
+total.value = res.data?.total ?? 0
+```
+
+?. 处理 data 缺失时的属性访问；?? 是空值合并运算符，只在左边为 null 或 undefined 时采用右边。
+
+例如，合法总数 0 会保持为 0；缺失列表变为 []，缺失总数变为 0。?? 不会把任意错误类型都转换正确；如果后端错误地返回字符串作为 list，仍需要修正接口或增加类型校验。
+
+LabList.vue 当前没有这层 ?? 默认值，两页写法还不完全一致。
+
+### 15.16 当前路由 ID 只在创建页面时读取一次
+
+虽然 useRoute 取得的是响应式路由对象，但这一句：
+
+```js
+lab_id: Number(route.query.lab_id)
+```
+
+执行的是“此刻读取、转换，然后把结果放入 params”。它没有自动创建 params.lab_id 与 route.query.lab_id 的持续绑定。
+
+这会带来一个边界：同一组件被复用，只把地址从 lab_id=8 改成 lab_id=9 时，setup 和 onMounted 不一定重新执行，params 仍可能保留旧 ID。
+
+当前从 LabList.vue 进入设备页，会创建目标页并按 ID 加载，符合这条正常使用路径。若以后增加“在设备页直接切换实验室”的操作，或者要求浏览器前进后退到不同 query 时同步刷新，就需要补充路由变化处理。
+
+参考改造步骤如下，尚未写入源码：
+
+1. 监听 route.query.lab_id 这一项，或使用路由更新守卫。
+2. 每次变化都重新转换并校验 ID。
+3. 更新 params.lab_id，把 params.page 重置为 1。
+4. 清理旧实验室和设备显示，再加载新数据。
+5. 避免旧请求晚返回后覆盖新实验室的数据。
+
+如果采用 immediate 的 watch 负责首次加载，应合并原来的 onMounted 查询，避免进入页面就请求两遍。路由对象的响应式属性监听方式可查 [Vue Router 组合式 API 文档](https://router.vuejs.org/guide/advanced/composition-api.html)。
+
+### 15.17 预约按钮目前具体执行了什么
+
+当前代码中有三处预约入口：
+
+| 位置 | 调用函数 | 实际行为 |
+| --- | --- | --- |
+| LabList.vue 卡片 | handelViewReserve(lab) | ElMessage.info 显示“稍后开发”加实验室名称 |
+| LabEquipment.vue 顶部 | hanldeReserveLab() | 空函数 |
+| LabEquipment.vue 设备行 | hanldeReserveEquipment(row) | 空函数 |
+
+两段函数现在是：
+
+```js
+const hanldeReserveLab = () => {}
+const hanldeReserveEquipment = () => {}
+```
+
+=> {} 定义一个函数，空的大括号表示函数体没有语句。点击按钮会调用它，但不会请求后端或保存数据。
+
+设备行虽然传了 row，当前函数没有声明接收参数，也没有使用这条数据。JavaScript 允许调用时传入多于形参的实参，因此不会仅因这一点报错。
+
+目前应把功能进度记录为“资源浏览和预约入口已写出，预约业务待开发”。真正预约至少还要定义预约数据、提交内容、登录用户归属、时段、数量和冲突处理等需求；本节不把这些按钮算作预约功能完成。
+
+### 15.18 管理端 Equipment.vue 的最新改动
+
+第一项改动是上一章指出的分页绑定已经修正：
+
+```html
+v-model:page-size="params.page_size"
+```
+
+现在模板绑定和请求对象使用同一个属性。本次读取与静态检查已经确认，因此第 10.10 节对应任务改为完成。
+
+当前 layout 没有 sizes 项，也就没有页大小选择器。如果以后加上，仍需要处理页大小变化后的页码和重新加载。
+
+第二项改动是模板删除了“删除”按钮，现在行操作只显示“编辑”。但是：
+
+- Equipment.vue 中的 handleDelete 逻辑还保留着。
+- frontend/src/api/equipment.js 仍有删除请求函数。
+- 后端 DELETE /api/equipment/{equipment_id} 仍保留管理员依赖及删除逻辑。
+
+所以这是界面入口的变化，不能写成“后端删除功能已经移除”。之后可以根据产品需求恢复入口，或清理不再使用的代码。
+
+第三项是 handleSearch 不再声明 async。它内部只是设置页码并调用 load，没有 await；去掉 async 符合当前写法，也不会因此停止请求。当前调用方仍没有等待 load 完成。
+
+上一章 Equipment.vue.resetForm 复制实验室字段的问题仍存在：lab_id、spec、quantity 没有正确重置，status 被写成布尔 true。这里没有因为分页修复就一并解决，继续保留待办。
+
+### 15.19 Layout.vue：角色菜单与当前路径高亮
+
+新增菜单项：
+
+```html
+<el-menu-item index="/manager/lablist" v-if="userInfo?.role === 'student'">
+  <el-icon><House /></el-icon>
+  <span>实验室列表</span>
+</el-menu-item>
+```
+
+userInfo 来自之前的 useUser 共享响应式状态。模板中自动解包 ref，?. 避免用户信息暂缺时读取 role 报错。
+
+v-if 条件为真才创建学生入口；管理员仍有实验室管理、设备管理和用户管理入口。index 配合 el-menu 的 router 模式用于导航，default-active 指定激活项。参见 [Element Plus Menu](https://element-plus.org/en-US/component/menu)。
+
+当前 el-menu 同时写了：
+
+```html
+:default-active="router.currentRoute.value.path"
+default-active="/manager/home"
+```
+
+前者动态读取当前路径，后者是固定文本，二者指向同一个组件属性。本次用项目安装的 Vue 编译器检查，生成的实际属性保留了前面的动态表达式，未报模板编译错误。
+
+仍建议只保留一处明确配置，避免阅读歧义；不要依赖重复属性来表达默认值。建议片段如下，未修改源码：
+
+```html
+<el-menu
+  router
+  :default-active="router.currentRoute.value.path"
+  style="height: 100%"
+>
+  <!-- 原有菜单项 -->
+</el-menu>
+```
+
+另一个独立问题是：设备浏览页路径为 /manager/labequipment，但菜单项 index 是 /manager/lablist。当前动态表达式不会自动把两者看作同一个栏目，进入设备页时缺少与该路径对应的菜单项。
+
+如果希望设备页也保持“实验室列表”栏目高亮，可以把设备页路径映射为 /manager/lablist，再把映射结果交给 default-active。高亮只是界面状态，不决定哪个接口能访问。
+
+### 15.20 LabList.vue 中需要整理的复制遗留
+
+当前浏览流程之外，LabList.vue 还保留了一些管理页代码。初学时要学会判断“定义了”与“真正被调用了”的区别。
+
+| 当前内容 | 是否用于本页正常浏览 | 影响或整理方向 |
+| --- | --- | --- |
+| form、formRef、dialogVisible、resetForm、handleCreate | 模板没有相应编辑弹窗或创建入口 | 可以按浏览页职责清理 |
+| handleCreate 中的 nextTick() | 当前模板未调用该函数 | 未导入 nextTick；以后调用这个闲置路径会报错 |
+| labOptions 与 loadLabs | 结果未用于当前模板 | onMounted 多发一次列表请求 |
+| params.lab_id | 实验室列表接口未声明这个筛选参数 | 不能据此筛选实验室列表 |
+| 卡片 header 的裸 template | 没有指定命名插槽 | 不会成为 el-card 的标题插槽 |
+
+其中额外请求很具体：onMounted 同时执行 loadLabs() 和 load()。前者查 page_size=100 只是填充未使用的 labOptions，后者才填充真正显示的卡片。当前页面因此会发出两次实验室列表请求。
+
+标题处现在是：
+
+```html
+<el-card>
+  <template>
+    <div>实验室列表</div>
+  </template>
+  <!-- 其他内容 -->
+</el-card>
+```
+
+本次模板编译确认它生成普通 template 元素，没有生成 header 插槽，标题内容不能按预期进入卡片标题区域。若想显示 el-card 的标题，应改为下面的命名插槽；这是建议，尚未写入源码：
+
+```html
+<el-card>
+  <template #header>
+    <div>实验室列表</div>
+  </template>
+  <!-- 其他内容 -->
+</el-card>
+```
+
+#header 是 v-slot:header 的简写，表示把内容传给组件名为 header 的插槽。这个名字由 el-card 组件约定，不能随意写成别的名字。参见 [Element Plus Card](https://element-plus.org/en-US/component/card)。
+
+这些问题中，有的会影响画面，有的只是冗余，有的要等特定函数执行才出错。不要看到“未导入 nextTick”就误判整张页面一定无法打开。
+
+### 15.21 如果从零写这一版，按什么顺序实现
+
+这次没有改变资源表结构，前提是第 14 节的实验室与设备模型、关联和管理端已完成。建议按下面顺序复现这一增量：
+
+1. 在实验室服务中写 get_lab，先明确“找到”和“找不到”分别返回或抛出什么。
+2. 注册 GET /api/lab/{lab_id}，放在 /list 后面；查询接入 get_current_user，写入继续接入管理员依赖。
+3. 调整设备列表的查询依赖，复用现有 lab_id 筛选，不重新复制设备查询。
+4. 在前端 api/lab.js 写 getLab(lab_id)，确认返回的是 Promise，await 后得到业务响应对象。
+5. 写最小 LabList.vue：params、load、onMounted、v-for 卡片和分页。先显示名称，再补图片及其他字段。
+6. 注册两个页面子路由，在学生菜单中提供实验室列表入口。
+7. 给卡片按钮添加 router.push，通过 query 带上实验室 ID。
+8. 写 LabEquipment.vue：读取和校验 ID，分别加载详情与设备，并显示加载状态、空列表和图片。
+9. 对照本章检查状态筛选、无效 ID、权限、空数据及路由复用边界。
+10. 按下一节在真实浏览器验收，最后再设计预约业务。
+
+为了学习，建议每完成一步就确认输入和输出。例如先在浏览器网络面板看见 /api/lab/8 返回正确对象，再检查标题是否更新；不要一次写完四个页面后才排查哪一层出了问题。
+
+本节快照忠实保存当前实现，包括上面已经指出的边界。复现时先理解原代码，再决定是否应用明确标注的整理建议；两者的预期结果需要分别记录。
+
+### 15.22 真实浏览器验收清单
+
+下面尚未在本次任务中实际操作完成。请使用学习数据库准备两间实验室和多条设备：一间启用、一间停用；设备分属不同实验室，并包含状态为 0 和 1 的记录。为验证分页，需要让某个查询结果超过一页。
+
+| 操作 | 当前应观察到什么 |
+| --- | --- |
+| 学生登录并查看侧栏 | 有“实验室列表”；无管理员管理菜单入口 |
+| 打开实验室列表，观察 Network | 卡片正常加载；当前还会出现一次未使用的 page_size=100 查询 |
+| 按名称查询、清空、回车 | 页码回到 1，卡片和总数按新条件更新 |
+| 翻页 | page 改变，展示对应页；名称筛选仍随请求发送 |
+| 查看 ID 为 8 的实验室设备 | 页面地址带 lab_id=8，同时出现详情和设备列表请求 |
+| 对比设备所属实验室 | 请求含 lab_id=8，结果应只属于该实验室 |
+| 打开不存在但为正整数的 ID | 详情提示不存在；设备列表请求独立执行，通常为空 |
+| 去掉 lab_id 或改为 abc、0、负数、小数 | 提示查询条件无效，不发起两项初始化查询 |
+| 查看设备图片 | 有图时显示缩略图，可打开预览；无图时不显示图片组件 |
+| 查看维修设备 | 标签显示维修；状态为数字 0 时预约按钮禁用 |
+| 点击各预约入口 | 卡片只显示稍后开发；详情页两个入口没有预约请求 |
+| 请求 status=true 与 status=false | True 能筛选；当前 False 仍返回所有状态，修正后再验 |
+| 查看停用实验室 | 当前学生页未传 status，详情也未限制启用状态；与需求对照确认 |
+| 保持同一个设备页，只改变 query 的实验室 ID | 检查是否仍显示旧数据，决定是否补路由监听 |
+| 进入设备页观察侧栏高亮 | 当前路径没有对应菜单项，按栏目规则决定是否映射 |
+| 学生尝试资源写入接口 | 后端拒绝；不能因为隐藏了按钮就省略此项检查 |
+| 退出登录或让 token 失效后再查询 | 前端守卫及后端身份验证按各自机制处理 |
+| 管理员进入设备管理 | 页大小绑定使用 page_size；行操作当前只有编辑 |
+
+查看接口时，要同时看 HTTP 状态和 JSON 中的 code。当前 BusinessException 处理器使用 HTTP 200 承载业务错误码；例如“实验室不存在”的默认业务 code 为 500，不会因为文字含“找不到”就自动变成 HTTP 404。
+
+浏览器 Network 中观察完整响应，再与 request.js 返回给页面的对象对比，可以巩固“HTTP 响应外壳”和“业务数据”的区别。
+
+### 15.23 本次完成的隔离检查与验证范围
+
+已经执行：
+
+- 用 SQLite 内存数据库加载实际模型和实际服务函数，检查实验室分页、名称筛选、启用筛选、详情存在与不存在、设备按 lab_id 隔离和关联名称返回。
+- 复现 status=False 未生效；确认停用实验室仍可通过当前详情服务查询，维修设备仍包含在设备列表中。
+- 静态检查接口依赖：三个 GET 查询使用 get_current_user，资源写入使用 get_current_admin；/list 位于动态详情路径之前。
+- 编译 LabList.vue、LabEquipment.vue、Equipment.vue、Layout.vue 的脚本和模板；检查两个前端 API 文件及路由文件的 JavaScript 语法。
+- 提取当前页面中的实际函数并使用模拟请求检查：路由带上 lab_id、1 个有效与 7 个无效 ID、空列表默认值、请求失败后恢复 loading、详情结果写入 lab。
+- 检查编译产物中的动态菜单属性、LabList.vue 缺少 header 插槽，以及闲置创建函数未导入 nextTick；确认设备分页绑定已修正。
+
+这些检查使用内存数据和模拟依赖，没有导入项目真实数据库配置，没有连接或修改真实数据库，也没有把点击按钮的浏览器流程当作已经完成。
+
+隔离检查可以证明这段代码在相应输入下怎样运行；它不能替代真实 MySQL、Vite 代理、图片地址、登录状态和页面交互共同参与的验收。第 15.22 节及全项目从零搭建检查继续保留。
+
+本章外部资料仅用于核对框架行为，项目具体实现以本地代码和下方快照为依据。引用均链接到对应官方页面；查阅时需结合项目安装版本。
+
+### 15.24 本次相关代码快照
+
+以下快照记录 2026-10-19 读取到的实现，便于按本章复习和复现。没有把本章建议自动合并进业务代码。
+
+equipment_service.py 和前端 api/equipment.js 本次对照没有变化，但它们承担设备筛选与请求封装，所以一并保留。models、schemas 等未变化文件可接着参考第 14 节，避免把历史章节与最新章节混成同一天的版本。
+
+<details>
+<summary><code>backend/app/services/lab_service.py</code></summary>
+
+```python
+from operator import or_
+from app.common.exceptions import BusinessException
+from app.common.response import PageResponse
+from app.models.lab import Lab
+from app.schemas.lab import (
+    LabCreateRequest,
+    LabResponse,
+    LabUpdateRequest,
+)
+from sqlalchemy.orm import Session
+
+from app.utils.password import hash_password, verify_password
+
+
+def get_lab_info(Lab: Lab) -> LabResponse:
+    return LabResponse.model_validate(Lab)
+
+
+def update_Lab_info(db: Session, Lab: Lab, data: LabUpdateRequest):
+    Lab_dict = data.model_dump(
+        exclude_none=True, exclude={"role", "status"}
+    )  # pydantic对象转换成字典
+    for field, value in Lab_dict.items():
+        setattr(Lab, field, value)
+    db.commit()
+    db.refresh(Lab)
+    return LabResponse.model_validate(Lab)
+
+
+def get_lab_page_list(
+    db: Session,
+    page: int,
+    page_size: int,
+    keywords: str | None = None,
+    status: bool | None = None,
+):
+    # select * from Lab where name like '%计算机实验室%'
+    query = db.query(Lab)
+
+    if keywords:
+        query = query.filter(Lab.name.ilike(f"%{keywords}%"))
+    if status:
+        query = query.filter(Lab.status == status)
+    total = query.count()
+    items = (
+        query.order_by(Lab.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return PageResponse(
+        list=[LabResponse.model_validate(item) for item in items], total=total
+    )
+
+
+def get_lab(db: Session, lab_id: int):
+    lab = db.query(Lab).filter(Lab.id == lab_id).first()
+    if not lab:
+        raise BusinessException(message="实验室不存在")
+    return LabResponse.model_validate(lab)
+
+
+def create_lab(db: Session, data: LabCreateRequest):
+    """新增"""
+
+    exist = db.query(Lab).filter(Lab.name == data.name).first()
+    if exist:
+        raise BusinessException(message="实验室已存在")
+
+    lab = Lab(
+        **data.model_dump(exclude_none=True)
+    )  # {"key1": "value1", "key2": "value2"} -> key1=value1, key2=value2
+    db.add(lab)
+    db.commit()
+    db.refresh(lab)
+    return LabResponse.model_validate(lab)
+
+
+def update_lab(db: Session, Lab_id: int, data: LabUpdateRequest):
+    """更新"""
+
+    lab = db.query(Lab).filter(Lab.id == Lab_id).first()
+    if not lab:
+        raise BusinessException(message="实验室不存在")
+    Lab_dict = data.model_dump(exclude_none=True)
+    for field, value in Lab_dict.items():
+        setattr(lab, field, value)
+    db.commit()
+    db.refresh(lab)
+    return LabResponse.model_validate(lab)
+
+
+def delete_lab(db: Session, Lab_id: int):
+    """删除"""
+
+    lab = db.query(Lab).filter(Lab.id == Lab_id).first()
+    if not lab:
+        raise BusinessException(message="实验室不存在")
+
+    db.delete(lab)
+    db.commit()
+```
+
+</details>
+
+<details>
+<summary><code>backend/app/api/lab.py</code></summary>
+
+```python
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from app.common.response import Response
+from app.database import get_db
+from app.dependencies.auth import get_current_admin, get_current_user
+from app.models.lab import Lab
+from app.models.user import User
+from app.schemas.lab import (
+    LabCreateRequest,
+    LabResponse,
+    LabUpdateRequest,
+)
+from app.services import lab_service
+
+router = APIRouter(prefix="/lab", tags=["实验室信息"])
+
+
+@router.get("/list")
+def get_lab_list(
+    page: int = 1,
+    page_size: int = 10,
+    keywords: str | None = None,
+    status: bool | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    res = lab_service.get_lab_page_list(db, page, page_size, keywords, status)
+    return Response.success(data=res)
+
+
+@router.get("/{lab_id}")
+def get_lab_detail(
+    lab_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    res = lab_service.get_lab(db, lab_id)
+    return Response.success(data=res)
+
+
+@router.post("")
+def create_lab(
+    data: LabCreateRequest,
+    current_user: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    res = lab_service.create_lab(db, data)
+    return Response.success(data=res)
+
+
+@router.put("/{lab_id}")
+def update_lab(
+    lab_id: int,
+    data: LabUpdateRequest,
+    current_user: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    res = lab_service.update_lab(db, lab_id, data)
+    return Response.success(data=res)
+
+
+@router.delete("/{lab_id}")
+def delete_lab(
+    lab_id: int,
+    current_user: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    lab_service.delete_lab(db, lab_id)
+    return Response.success()
+```
+
+</details>
+
+<details>
+<summary><code>backend/app/api/equipment.py</code></summary>
+
+```python
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from app.common.response import Response
+from app.models.user import User
+from app.dependencies.auth import get_current_admin, get_current_user
+from app.schemas.equipment import (
+    EquipmentCreateRequest,
+    EquipmentUpdateRequest,
+)
+from app.services import equipment_service
+from app.database import get_db
+
+router = APIRouter(prefix="/equipment", tags=["实验室设备接口"])
+
+
+@router.get("/list")
+def get_equipment_list(
+    page: int = 1,
+    page_size: int = 10,
+    keywords: str | None = None,
+    lab_id: int | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    res = equipment_service.get_equipment_page_list(
+        db, page, page_size, keywords, lab_id
+    )
+    return Response.success(data=res)
+
+
+@router.post("")
+def create_equipment(
+    data: EquipmentCreateRequest,
+    current_user: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    res = equipment_service.create_equipment(db, data)
+    return Response.success(data=res)
+
+
+@router.put("/{equipment_id}")
+def update_equipment(
+    equipment_id: int,
+    data: EquipmentUpdateRequest,
+    current_user: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    res = equipment_service.update_equipment(db, equipment_id, data)
+    return Response.success(data=res)
+
+
+@router.delete("/{equipment_id}")
+def delete_equipment(
+    equipment_id: int,
+    current_user: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    equipment_service.delete_equipment(db, equipment_id)
+    return Response.success()
+```
+
+</details>
+
+<details>
+<summary><code>backend/app/services/equipment_service.py</code></summary>
+
+```python
+from app.common.exceptions import BusinessException
+from app.common.response import PageResponse
+from app.models.equipment import Equipment
+from app.models.lab import Lab
+from app.schemas.equipment import (
+    EquipmentResponse,
+    EquipmentCreateRequest,
+    EquipmentUpdateRequest,
+)
+from sqlalchemy.orm import Session
+
+
+def get_equipment_page_list(
+    db: Session,
+    page: int,
+    page_size: int,
+    keywords: str | None = None,
+    lab_id: int | None = None,
+):
+    """分页模糊查询列表"""
+
+    # select * from equipment where name like '%计算机%';
+    query = db.query(Equipment)
+    if lab_id is not None:
+        query = query.filter(Equipment.lab_id == lab_id)
+    if keywords:
+        query = query.filter(Equipment.name.ilike(f"%{keywords}%"))
+    total = query.count()
+    items = (
+        query.order_by(Equipment.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    result = []
+    for item in items:
+        data = EquipmentResponse.model_validate(item)
+        data.lab_name = item.lab.name if item.lab else None
+        result.append(data)
+    return PageResponse(list=result, total=total)
+
+
+def create_equipment(db: Session, data: EquipmentCreateRequest):
+    """新增"""
+    lab = db.query(Lab).filter(Lab.id == data.lab_id).first()
+    if not lab:
+        raise BusinessException(message="实验室不存在")
+
+    exist = (
+        db.query(Equipment)
+        .filter(Equipment.lab_id == data.lab_id, Equipment.name == data.name)
+        .first()
+    )
+    if exist:
+        raise BusinessException(message="同一个实验室不能存在同名的设备")
+    equipment = Equipment(**data.model_dump())
+    db.add(equipment)
+    db.commit()
+    db.refresh(equipment)
+    res = EquipmentResponse.model_validate(equipment)
+    res.lab_name = equipment.lab.name if equipment.lab else None
+    return res
+
+
+def update_equipment(db: Session, equipment_id: int, data: EquipmentUpdateRequest):
+    """更新"""
+    equipment = db.query(Equipment).filter(Equipment.id == equipment_id).first()
+    if not equipment:
+        raise BusinessException(message="实验室设备不存在")
+
+    payload = data.model_dump(exclude_none=True)
+    lab_id = payload.get("lab_id", equipment.lab_id)
+    name = payload.get("name", equipment.name)
+    lab = db.query(Lab).filter(Lab.id == lab_id).first()
+    if not lab:
+        raise BusinessException(message="实验室不存在")
+
+    exist = (
+        db.query(Equipment)
+        .filter(
+            Equipment.lab_id == lab_id,
+            Equipment.name == name,
+            Equipment.id != equipment.id,
+        )
+        .first()
+    )
+
+    if exist:
+        raise BusinessException(message="同一个实验室不能存在同名的设备")
+
+    for field, value in payload.items():
+        setattr(equipment, field, value)
+
+    db.commit()
+    db.refresh(equipment)
+
+    res = EquipmentResponse.model_validate(equipment)
+    res.lab_name = equipment.lab.name if equipment.lab else None
+    return res
+
+
+def delete_equipment(db: Session, equipment_id: int):
+    """删除"""
+    equipment = db.query(Equipment).filter(Equipment.id == equipment_id).first()
+    if not equipment:
+        raise BusinessException(message="实验室设备不存在")
+    db.delete(equipment)
+    db.commit()
+```
+
+</details>
+
+<details>
+<summary><code>frontend/src/api/lab.js</code></summary>
+
+```js
+import request from '@/utils/request'
+
+// 分页模糊查询实验室列表
+export function getLabPageList(params) {
+  return request({
+    url: '/api/lab/list',
+    method: 'get',
+    params
+  })
+}
+
+// 分页模糊查询实验室列表
+export function getLab(lab_id) {
+  return request({
+    url: `/api/lab/${lab_id}`,
+    method: 'get'
+  })
+}
+
+// 新增实验室
+export function createLabApi(data) {
+  return request({
+    url: '/api/lab',
+    method: 'post',
+    data
+  })
+}
+
+// 修改实验室
+export function updateLabApi(labId, data) {
+  return request({
+    url: `/api/lab/${labId}`,
+    method: 'put',
+    data
+  })
+}
+
+// 删除实验室
+export function deleteLabApi(labId) {
+  return request({
+    url: `/api/lab/${labId}`,
+    method: 'delete'
+  })
+}
+```
+
+</details>
+
+<details>
+<summary><code>frontend/src/api/equipment.js</code></summary>
+
+```js
+import request from '@/utils/request'
+
+// 分页模糊查询列表
+export function getEquipmentPageList(params) {
+  return request({
+    url: '/api/equipment/list',
+    method: 'get',
+    params
+  })
+}
+
+// 新增
+export function createEquipmentApi(data) {
+  return request({
+    url: '/api/equipment',
+    method: 'post',
+    data
+  })
+}
+
+// 修改
+export function updateEquipmentApi(equipmentId, data) {
+  return request({
+    url: `/api/equipment/${equipmentId}`,
+    method: 'put',
+    data
+  })
+}
+
+// 删除
+export function deleteEquipmentApi(equipmentId) {
+  return request({
+    url: `/api/equipment/${equipmentId}`,
+    method: 'delete'
+  })
+}
+```
+
+</details>
+
+<details>
+<summary><code>frontend/src/views/LabList.vue</code></summary>
+
+```vue
+<template>
+  <div>
+    <el-card>
+      <template>
+        <div style="font-size: 16px; font-weight: bold">
+          <span>实验室列表</span>
+        </div>
+      </template>
+      <div style="margin-bottom: 10px">
+        <el-input
+          placeholder="请输入名称查询"
+          v-model="params.keywords"
+          style="width: 240px; margin-right: 8px"
+          clearable
+          @keyup.enter="handleSearch"
+          @clear="handleSearch"
+        ></el-input>
+
+        <el-button type="primary" :icon="Search" @click="handleSearch">查询</el-button>
+      </div>
+      <div>
+        <el-row :gutter="16" v-loading="loading">
+          <el-col v-for="item in tableData" :key="item.id" :span="6" style="margin-bottom: 16px">
+            <el-card shadow="hover">
+              <img
+                v-if="item.img"
+                :src="item.img"
+                alt=""
+                style="
+                  display: block;
+                  width: 100%;
+                  height: 150px;
+                  object-fit: cover;
+                  border-radius: 6px;
+                "
+              />
+              <div
+                v-else
+                style="width: 100%; height: 150px; background-color: #f5f7fa; border-radius: 6px"
+              ></div>
+              <div style="font-size: 16px; font-weight: bold; margin-top: 10px">
+                {{ item.name }}
+              </div>
+              <div style="font-size: 13px; margin-top: 6px; color: #666">
+                位置: {{ item.location || '-' }}
+              </div>
+              <div style="font-size: 13px; margin-top: 6px; color: #666">
+                容量: {{ item.capacity }} 人
+              </div>
+              <div style="font-size: 13px; margin-top: 6px; color: #666">
+                开放时间:
+                {{
+                  item.open_time && item.close_time ? `${item.open_time} - ${item.close_time}` : '-'
+                }}
+              </div>
+              <div style="margin-top: 12px; display: flex; gap: 8px">
+                <el-button style="flex: 1" @click="handelViewEquipment(item)">查看设备</el-button>
+                <el-button style="flex: 1" type="primary" @click="handelViewReserve(item)"
+                  >预约</el-button
+                >
+              </div>
+            </el-card>
+          </el-col>
+        </el-row>
+        <div style="margin-top: 10px; display: flex; justify-content: flex-end">
+          <el-pagination
+            v-model:current-page="params.page"
+            v-model:page-size="params.page_size"
+            :total="total"
+            background
+            layout="total, prev, pager, next"
+            @current-change="load"
+          />
+        </div>
+      </div>
+    </el-card>
+  </div>
+</template>
+
+<script setup>
+import { ref, reactive, onMounted } from 'vue'
+import { getLabPageList } from '@/api/lab'
+import { Search } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import router from '@/router'
+
+const loading = ref(false)
+const tableData = ref([])
+const labOptions = ref([])
+const total = ref(0)
+const dialogVisible = ref(false)
+const formRef = ref()
+const form = reactive({
+  id: null,
+  lab_id: null,
+  name: '',
+  description: '',
+  img: '',
+  spec: '',
+  quantity: 1,
+  status: 1
+})
+
+const params = reactive({
+  page: 1,
+  page_size: 10,
+  keywords: '',
+  lab_id: null
+})
+
+// 加载分页数据
+const load = async () => {
+  loading.value = true
+  try {
+    const res = await getLabPageList(params)
+    if (res.code === 200) {
+      tableData.value = res.data?.list
+      total.value = res.data?.total
+    }
+  } finally {
+    loading.value = false
+  }
+}
+
+const resetForm = () => {
+  Object.assign(form, {
+    id: null,
+    name: '',
+    description: '',
+    img: '',
+    location: '',
+    capacity: 20,
+    open_time: '08:30',
+    close_time: '20:30',
+    status: true
+  })
+}
+
+const handleSearch = () => {
+  params.page = 1
+  load()
+}
+
+const handleCreate = async () => {
+  resetForm()
+  dialogVisible.value = true
+  await nextTick()
+  formRef.value?.clearValidate()
+}
+
+const loadLabs = async () => {
+  const res = await getLabPageList({ page: 1, page_size: 100 })
+  if (res.code === 200) {
+    labOptions.value = res.data?.list
+  }
+}
+
+const handelViewEquipment = (lab) => {
+  router.push({ path: '/manager/labequipment', query: { lab_id: lab.id } })
+}
+
+const handelViewReserve = (lab) => {
+  ElMessage.info(`稍后开发${lab.name}`)
+}
+
+onMounted(() => {
+  loadLabs()
+  load()
+})
+</script>
+```
+
+</details>
+
+<details>
+<summary><code>frontend/src/views/LabEquipment.vue</code></summary>
+
+```vue
+<template>
+  <div>
+    <el-card>
+      <template #header>
+        <div style="display: flex; justify-content: space-between; align-items: center">
+          <div style="font-size: 16px; font-weight: bold">
+            <span>{{ lab?.name || '实验室' }}设备列表</span>
+          </div>
+          <div>
+            <el-button type="primary" @click="hanldeReserveLab">预约实验室</el-button>
+            <el-button @click="router.push('/manager/lablist')">返回实验室列表</el-button>
+          </div>
+        </div>
+      </template>
+      <div
+        v-if="lab"
+        style="color: #666; margin-bottom: 16px; background-color: antiquewhite; padding: 10px"
+      >
+        <div style="margin-bottom: 10px">简介：{{ lab.description }}</div>
+        <div>
+          位置：{{ lab.location }}
+          <span style="margin: 0 10px">|</span>
+          容纳 {{ lab.capacity }} 人
+          <span style="margin: 0 10px">|</span>
+          开放：{{ lab.open_time && lab.close_time ? `${lab.open_time} - ${lab.close_time}` : '-' }}
+        </div>
+      </div>
+      <el-table
+        :header-cell-style="{ backgroundColor: '#fdf', color: '#333' }"
+        :data="tableData"
+        style="width: 100%"
+        v-loading="loading"
+      >
+        <el-table-column prop="img" label="图片" width="90">
+          <template #default="{ row }">
+            <div style="min-height: 50px">
+              <el-image
+                v-if="row.img"
+                style="display: block; width: 50px; height: 50px; border-radius: 6px"
+                :src="row.img"
+                :preview-src-list="[row.img]"
+                :preview-teleported="true"
+                alt=""
+              />
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column prop="lab_name" label="所属实验室" />
+        <el-table-column prop="name" label="设备名称" />
+
+        <el-table-column prop="spec" label="型号规格" />
+        <el-table-column prop="quantity" label="数量" width="80" />
+        <el-table-column prop="status" label="状态" width="90">
+          <template #default="{ row }">
+            <el-tag :type="row.status === 1 ? 'success' : 'danger'">
+              {{ row.status === 1 ? '正常' : '维修' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="180">
+          <template #default="{ row }">
+            <el-button
+              :disabled="!row.status"
+              type="primary"
+              text
+              bg
+              @click="hanldeReserveEquipment(row)"
+              >预约</el-button
+            >
+          </template>
+        </el-table-column>
+      </el-table>
+      <div style="margin-top: 10px; display: flex; justify-content: flex-end">
+        <el-pagination
+          v-model:current-page="params.page"
+          v-model:page-size="params.page_size"
+          :total="total"
+          background
+          layout="total, prev, pager, next"
+          @current-change="loadEquipment"
+        />
+      </div>
+    </el-card>
+  </div>
+</template>
+
+<script setup>
+import { getLab } from '@/api/lab'
+import { ElMessage } from 'element-plus'
+import { ref, reactive, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { getEquipmentPageList } from '@/api/equipment'
+
+const route = useRoute()
+const router = useRouter()
+const loading = ref(false)
+const tableData = ref([])
+const total = ref(0)
+const lab = ref(null)
+const params = reactive({
+  page: 1,
+  page_size: 10,
+  lab_id: Number(route.query.lab_id) // "8" -> 8
+})
+
+// 加载设备分页数据
+const loadEquipment = async () => {
+  loading.value = true
+  try {
+    const res = await getEquipmentPageList(params)
+    if (res.code === 200) {
+      tableData.value = res.data?.list ?? []
+      total.value = res.data?.total ?? 0
+    }
+  } catch {
+    // 请求失败时由请求拦截器提示错误。
+  } finally {
+    loading.value = false
+  }
+}
+
+const hanldeReserveLab = () => {}
+const hanldeReserveEquipment = () => {}
+const loadLab = async () => {
+  try {
+    const res = await getLab(params.lab_id)
+    if (res.code === 200) {
+      lab.value = res.data
+    }
+  } catch {
+    // 请求失败时由请求拦截器提示错误。
+  }
+}
+
+onMounted(() => {
+  if (!Number.isInteger(params.lab_id) || params.lab_id <= 0) {
+    ElMessage.warning('缺少有效的实验室查询条件 [lab_id]')
+    return
+  }
+  loadLab()
+  loadEquipment()
+})
+</script>
+```
+
+</details>
+
+<details>
+<summary><code>frontend/src/views/Equipment.vue</code></summary>
+
+```vue
+<template>
+  <div style="width: 50%">
+    <el-card>
+      <template #header>
+        <div style="font-size: 16px; font-weight: bold">
+          <span>设备管理</span>
+        </div>
+      </template>
+      <div style="margin-bottom: 10px">
+        <el-select
+          v-model="params.lab_id"
+          placeholder="所属实验室"
+          clearable
+          style="width: 200px; margin-right: 8px"
+          @change="handleSearch"
+        >
+          <el-option
+            v-for="item in labOptions"
+            :key="item.id"
+            :label="item.name"
+            :value="item.id"
+          />
+        </el-select>
+
+        <el-input
+          placeholder="请输入设备名称或型号"
+          v-model="params.keywords"
+          style="width: 240px; margin-right: 8px"
+          clearable
+          @keyup.enter="handleSearch"
+          @clear="handleSearch"
+        ></el-input>
+
+        <el-button type="primary" :icon="Search" @click="handleSearch">查询</el-button>
+        <el-button type="success" :icon="Plus" @click="handleCreate">新增</el-button>
+      </div>
+      <el-table
+        :header-cell-style="{ backgroundColor: '#fdf', color: '#333' }"
+        :data="tableData"
+        style="width: 100%"
+        v-loading="loading"
+      >
+        <el-table-column prop="img" label="图片" width="90">
+          <template #default="{ row }">
+            <div style="min-height: 50px">
+              <img
+                v-if="row.img"
+                style="display: block; width: 50px; height: 50px; border-radius: 6px"
+                :src="row.img"
+                alt=""
+              />
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column prop="lab_name" label="所属实验室" />
+        <el-table-column prop="name" label="设备名称" />
+
+        <el-table-column prop="spec" label="型号规格" />
+        <el-table-column prop="quantity" label="数量" width="80" />
+        <el-table-column prop="status" label="状态" width="90">
+          <template #default="{ row }">
+            <el-tag :type="row.status === 1 ? 'success' : 'danger'">
+              {{ row.status === 1 ? '正常' : '维修' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="180">
+          <template #default="{ row }">
+            <el-button type="primary" text bg @click="handleEdit(row)">编辑</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div style="margin-top: 10px; display: flex; justify-content: flex-end">
+        <el-pagination
+          v-model:current-page="params.page"
+          v-model:page-size="params.page_size"
+          :total="total"
+          background
+          layout="total, prev, pager, next"
+          @current-change="load"
+        />
+      </div>
+      <el-dialog v-model="dialogVisible" :title="form.id ? '编辑' : '新增'" width="450">
+        <el-form
+          id="user-form"
+          ref="formRef"
+          :rules="rules"
+          :model="form"
+          label-width="80px"
+          style="width: 100%; padding-right: 30px; padding-top: 16px"
+          v-loading="formLoading"
+          @submit.prevent="handleSave"
+        >
+          <el-form-item label="所属实验室" prop="lab_id">
+            <el-select v-model="form.lab_id" placeholder="请选择实验室" style="width: 100%">
+              <el-option
+                v-for="item in labOptions"
+                :key="item.id"
+                :label="item.name"
+                :value="item.id"
+              />
+            </el-select>
+          </el-form-item>
+
+          <el-form-item label="设备名称" prop="name">
+            <el-input v-model="form.name" placeholder="请输入设备名称" />
+          </el-form-item>
+
+          <el-form-item label="说明">
+            <el-input
+              v-model="form.description"
+              type="textarea"
+              :rows="3"
+              placeholder="请输入说明"
+            />
+          </el-form-item>
+
+          <el-form-item label="图片">
+            <el-upload
+              class="avatar-uploader"
+              :http-request="handleFileUpload"
+              :show-file-list="false"
+              accept="image/jpeg,image/png,image/gif,image/webp"
+              :before-upload="beforeAvatarUpload"
+            >
+              <img v-if="form.img" :src="form.img" class="avatar" />
+              <el-icon v-else class="avatar-uploader-icon"><Plus /></el-icon>
+            </el-upload>
+          </el-form-item>
+
+          <el-form-item label="型号规格">
+            <el-input v-model="form.spec" placeholder="例如 RTX4090 24G" />
+          </el-form-item>
+
+          <el-form-item label="数量" prop="quantity">
+            <el-input-number v-model="form.quantity" :min="1" :max="999" />
+          </el-form-item>
+
+          <el-form-item label="状态">
+            <el-radio-group v-model="form.status">
+              <el-radio :value="1">正常</el-radio>
+              <el-radio :value="0">维修</el-radio>
+            </el-radio-group>
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button type="primary" native-type="submit" form="user-form" :loading="formLoading">
+            确定
+          </el-button>
+          <el-button :disabled="formLoading" @click="dialogVisible = false">取消</el-button>
+        </template>
+      </el-dialog>
+    </el-card>
+  </div>
+</template>
+
+<script setup>
+import { ref, reactive, computed, onMounted, nextTick } from 'vue'
+import {
+  getEquipmentPageList,
+  createEquipmentApi,
+  updateEquipmentApi,
+  deleteEquipmentApi
+} from '@/api/equipment'
+import { getLabPageList } from '@/api/lab'
+import { Search, Plus } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { uploadFileApi } from '@/api/files'
+
+const params = reactive({
+  page: 1,
+  page_size: 10,
+  keywords: '',
+  lab_id: null
+})
+
+const loading = ref(false)
+const tableData = ref([])
+const total = ref(0)
+const labOptions = ref([])
+const dialogVisible = ref(false)
+const formRef = ref()
+const formLoading = ref(false)
+const form = reactive({
+  id: null,
+  lab_id: null,
+  name: '',
+  description: '',
+  img: '',
+  spec: '',
+  quantity: 1,
+  status: 1
+})
+
+// 加载分页数据
+const load = async () => {
+  loading.value = true
+  try {
+    const res = await getEquipmentPageList(params)
+    if (res.code === 200) {
+      tableData.value = res.data?.list
+      total.value = res.data?.total
+    }
+  } finally {
+    loading.value = false
+  }
+}
+
+const rules = {
+  lab_id: [{ required: true, message: '请选择实验室', trigger: 'change' }],
+  name: [{ required: true, message: '请输入设备名称', trigger: 'blur' }],
+  quantity: [{ required: true, message: '请输入数量', trigger: 'blur' }]
+}
+
+const resetForm = () => {
+  Object.assign(form, {
+    id: null,
+    name: '',
+    description: '',
+    img: '',
+    location: '',
+    capacity: 20,
+    open_time: '08:30',
+    close_time: '20:30',
+    status: true
+  })
+}
+
+const handleSearch = () => {
+  params.page = 1
+  load()
+}
+
+const handleCreate = async () => {
+  resetForm()
+  dialogVisible.value = true
+  await nextTick()
+  formRef.value?.clearValidate()
+}
+
+// 编辑信息
+const handleEdit = (row) => {
+  resetForm()
+  Object.assign(form, {
+    id: row.id,
+    lab_id: row.lab_id,
+    name: row.name,
+    description: row.description,
+    img: row.img,
+    spec: row.spec,
+    quantity: row.quantity,
+    status: row.status
+  })
+  dialogVisible.value = true
+}
+
+// 删除信息
+const handleDelete = (row) => {
+  ElMessageBox.confirm(`确认删除【${row.name}】？`, '确认删除', { type: 'warning' }).then(
+    async () => {
+      const res = await deleteEquipmentApi(row.id)
+      if (res.code === 200) {
+        ElMessage.success('删除成功')
+        load()
+      }
+    }
+  )
+}
+
+// 保存信息
+const handleSave = async () => {
+  if (formLoading.value || !formRef.value) return
+  formLoading.value = true
+  try {
+    const valid = await formRef.value.validate().catch(() => false)
+    if (!valid) return
+    const { id, ...equipmentData } = form
+    const res = id
+      ? await updateEquipmentApi(id, equipmentData)
+      : await createEquipmentApi(equipmentData)
+    if (res.code === 200) {
+      dialogVisible.value = false
+      ElMessage.success('操作成功')
+      await load()
+    }
+  } catch {
+    // 请求失败时由请求拦截器提示错误，保留表单以便重试。
+  } finally {
+    formLoading.value = false
+  }
+}
+
+const beforeAvatarUpload = (file) => {
+  const imageTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+
+  if (!imageTypes.includes(file.type)) {
+    ElMessage.error('只能上传图片')
+    return false
+  }
+
+  if (file.size / 1024 / 1024 > 2) {
+    ElMessage.error('上传图片大小不能超过2M')
+    return false
+  }
+
+  return true
+}
+
+const handleFileUpload = async ({ file }) => {
+  try {
+    const res = await uploadFileApi(file)
+    if (res.code === 200) {
+      form.img = res.data?.url
+    }
+  } catch {}
+}
+
+const loadLabs = async () => {
+  const res = await getLabPageList({ page: 1, page_size: 100 })
+  if (res.code === 200) {
+    labOptions.value = res.data?.list
+  }
+}
+
+onMounted(() => {
+  loadLabs()
+  load()
+})
+</script>
+
+<style scoped>
+.avatar-uploader .avatar {
+  width: 130px;
+  height: 130px;
+  display: block;
+}
+</style>
+<style>
+.avatar-uploader .el-upload {
+  border: 1px dashed var(--el-border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: var(--el-transition-duration-fast);
+}
+.avatar-uploader .el-upload:hover {
+  border-color: var(--el-color-primary);
+}
+.el-icon.avatar-uploader-icon {
+  font-size: 28px;
+  color: #8c939d;
+  width: 130px;
+  height: 130px;
+  text-align: center;
+}
+</style>
+```
+
+</details>
+
+<details>
+<summary><code>frontend/src/layouts/Layout.vue</code></summary>
+
+```vue
+<template>
+  <div>
+    <el-container style="min-height: 100vh">
+      <el-header
+        style="
+          display: flex;
+          align-items: center;
+          border-bottom: 1px solid #ddd;
+          background-color: #fff;
+        "
+      >
+        <div style="display: flex; align-items: center; font-size: 24px; font-weight: bold">
+          <img style="width: 40px" src="@/assets/imgs/logo.png" alt="" />
+          <div style="margin-left: 5px">智能实验室预约系统</div>
+        </div>
+        <div style="margin-left: auto">
+          <el-dropdown @command="handleCommand">
+            <div style="display: flex; align-items: center; margin-right: 20px; cursor: pointer">
+              <img :src="userInfo?.avatar" alt="" style="width: 30px; border-radius: 50%" />
+              <div style="margin-left: 3px">
+                {{ userInfo?.name || userInfo?.username || '用户' }}
+              </div>
+            </div>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="profile">个人信息</el-dropdown-item>
+                <el-dropdown-item command="password">修改密码</el-dropdown-item>
+                <el-dropdown-item command="logout">退出登录</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
+      </el-header>
+      <el-container>
+        <el-aside width="220px">
+          <el-menu
+            router
+            :default-active="router.currentRoute.value.path"
+            style="height: 100%"
+            default-active="/manager/home"
+          >
+            <el-menu-item index="/manager/home">
+              <el-icon><icon-menu /></el-icon>
+              <span>系统首页</span>
+            </el-menu-item>
+            <el-menu-item index="/manager/lablist" v-if="userInfo?.role === 'student'">
+              <el-icon><House /></el-icon>
+              <span>实验室列表</span>
+            </el-menu-item>
+            <el-menu-item index="/manager/lab" v-if="userInfo?.role === 'admin'">
+              <el-icon><House /></el-icon>
+              <span>实验室管理</span>
+            </el-menu-item>
+            <el-menu-item index="/manager/equipment" v-if="userInfo?.role === 'admin'">
+              <el-icon><Setting /></el-icon>
+              <span>设备列表管理</span>
+            </el-menu-item>
+            <el-menu-item index="/manager/user" v-if="userInfo?.role === 'admin'">
+              <el-icon><User /></el-icon>
+              <span>用户管理</span>
+            </el-menu-item>
+          </el-menu>
+        </el-aside>
+
+        <el-main>
+          <router-view />
+        </el-main>
+      </el-container>
+    </el-container>
+  </div>
+</template>
+
+<script setup>
+import { Menu as IconMenu, House, Setting, User } from '@element-plus/icons-vue'
+import router from '@/router'
+import { logout } from '@/utils/auth'
+import { useUser } from '@/utils/user'
+const { userInfo } = useUser()
+
+const handleLogout = () => {
+  logout()
+  router.push('/login')
+}
+
+const goPerson = () => {
+  router.push('/manager/profile')
+}
+
+const handleCommand = (command) => {
+  if (command === 'profile') {
+    router.push('/manager/profile')
+  } else if (command === 'password') {
+    router.push('/manager/password')
+  } else if (command === 'logout') {
+    logout()
+    router.push('/login')
+  }
+}
+</script>
+```
+
+</details>
+
+<details>
+<summary><code>frontend/src/router/index.js</code></summary>
+
+```js
+import { getToken } from '@/utils/auth'
+import { createRouter, createWebHistory } from 'vue-router'
+
+const router = createRouter({
+  history: createWebHistory(import.meta.env.BASE_URL),
+  routes: [
+    { path: '/', redirect: '/manager/home' },
+    {
+      path: '/manager',
+      name: 'Layout',
+      component: () => import('@/layouts/Layout.vue'),
+      children: [
+        {
+          path: 'home',
+          name: 'Home',
+          component: () => import('@/views/Home.vue')
+        },
+        {
+          path: 'lab',
+          name: 'Lab',
+          component: () => import('@/views/Lab.vue')
+        },
+        {
+          path: 'equipment',
+          name: 'Equipment',
+          component: () => import('@/views/Equipment.vue')
+        },
+        {
+          path: 'user',
+          name: 'User',
+          component: () => import('@/views/User.vue')
+        },
+        {
+          path: 'profile',
+          name: 'Profile',
+          component: () => import('@/views/Profile.vue')
+        },
+        {
+          path: 'password',
+          name: 'Password',
+          component: () => import('@/views/Password.vue')
+        },
+        {
+          path: 'lablist',
+          name: 'LabList',
+          component: () => import('@/views/LabList.vue')
+        },
+        {
+          path: 'labequipment',
+          name: 'LabEquipment',
+          component: () => import('@/views/LabEquipment.vue')
+        }
+      ]
+    },
+    {
+      path: '/login',
+      name: 'Login',
+      component: () => import('@/views/Login.vue')
+    },
+    {
+      path: '/register',
+      name: 'Register',
+      component: () => import('@/views/Register.vue')
+    }
+  ]
+})
+
+// 路由守卫
+router.beforeEach((to, from) => {
+  const token = getToken()
+  if (to.path === '/login' || to.path === '/register') {
+    return true
+  } else {
+    return token ? true : '/login'
+  }
+})
+
+export default router
+```
+
+</details>
+
+---
 
 维护说明：章节按日期保存实现过程。已有问题修正后同步更新进度；正常流程、已知边界、隔离验证和真实浏览器验收分别记录。整个项目的从零复现仍需最终完成一次完整检查。
 
