@@ -39,6 +39,16 @@ const router = createRouter({
           path: 'password',
           name: 'Password',
           component: () => import('@/views/Password.vue')
+        },
+        {
+          path: 'lablist',
+          name: 'LabList',
+          component: () => import('@/views/LabList.vue')
+        },
+        {
+          path: 'labequipment',
+          name: 'LabEquipment',
+          component: () => import('@/views/LabEquipment.vue')
         }
       ]
     },

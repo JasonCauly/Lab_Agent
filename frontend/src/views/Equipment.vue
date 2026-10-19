@@ -67,14 +67,13 @@
         <el-table-column label="操作" width="180">
           <template #default="{ row }">
             <el-button type="primary" text bg @click="handleEdit(row)">编辑</el-button>
-            <el-button type="danger" text bg @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
       <div style="margin-top: 10px; display: flex; justify-content: flex-end">
         <el-pagination
           v-model:current-page="params.page"
-          v-model:page-size="params.pageSize"
+          v-model:page-size="params.page_size"
           :total="total"
           background
           layout="total, prev, pager, next"
@@ -177,8 +176,8 @@ const params = reactive({
 
 const loading = ref(false)
 const tableData = ref([])
-const labOptions = ref([])
 const total = ref(0)
+const labOptions = ref([])
 const dialogVisible = ref(false)
 const formRef = ref()
 const formLoading = ref(false)
@@ -227,7 +226,7 @@ const resetForm = () => {
   })
 }
 
-const handleSearch = async () => {
+const handleSearch = () => {
   params.page = 1
   load()
 }

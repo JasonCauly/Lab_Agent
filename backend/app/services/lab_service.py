@@ -28,13 +28,19 @@ def update_Lab_info(db: Session, Lab: Lab, data: LabUpdateRequest):
 
 
 def get_lab_page_list(
-    db: Session, page: int, page_size: int, keywords: str | None = None
+    db: Session,
+    page: int,
+    page_size: int,
+    keywords: str | None = None,
+    status: bool | None = None,
 ):
     # select * from Lab where name like '%计算机实验室%'
     query = db.query(Lab)
 
     if keywords:
         query = query.filter(Lab.name.ilike(f"%{keywords}%"))
+    if status:
+        query = query.filter(Lab.status == status)
     total = query.count()
     items = (
         query.order_by(Lab.id.desc())
@@ -45,6 +51,13 @@ def get_lab_page_list(
     return PageResponse(
         list=[LabResponse.model_validate(item) for item in items], total=total
     )
+
+
+def get_lab(db: Session, lab_id: int):
+    lab = db.query(Lab).filter(Lab.id == lab_id).first()
+    if not lab:
+        raise BusinessException(message="实验室不存在")
+    return LabResponse.model_validate(lab)
 
 
 def create_lab(db: Session, data: LabCreateRequest):

@@ -33,10 +33,19 @@
       </el-header>
       <el-container>
         <el-aside width="220px">
-          <el-menu router style="height: 100%" default-active="/manager/home">
+          <el-menu
+            router
+            :default-active="router.currentRoute.value.path"
+            style="height: 100%"
+            default-active="/manager/home"
+          >
             <el-menu-item index="/manager/home">
               <el-icon><icon-menu /></el-icon>
               <span>系统首页</span>
+            </el-menu-item>
+            <el-menu-item index="/manager/lablist" v-if="userInfo?.role === 'student'">
+              <el-icon><House /></el-icon>
+              <span>实验室列表</span>
             </el-menu-item>
             <el-menu-item index="/manager/lab" v-if="userInfo?.role === 'admin'">
               <el-icon><House /></el-icon>

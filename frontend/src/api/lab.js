@@ -9,6 +9,14 @@ export function getLabPageList(params) {
   })
 }
 
+// 分页模糊查询实验室列表
+export function getLab(lab_id) {
+  return request({
+    url: `/api/lab/${lab_id}`,
+    method: 'get'
+  })
+}
+
 // 新增实验室
 export function createLabApi(data) {
   return request({

@@ -1,12 +1,12 @@
 # demo_1代码学习：复习笔记与后续任务
 
-整理日期：2026-10-15。
+整理日期：2026-10-19。
 
 > **使用方式**：先阅读概念和执行流程，再对照文件看代码。代码块中标明了文件路径。末尾的待办清单区分“已经讲过”和“尚待讲解、验证”。
 >
 > **最终目标**：理解 lab-agent 的设计与代码，并能够从空目录创建、配置、运行和检查项目。
 >
-> **当前进度**：已讲解前后端基础、用户与个人资料管理；第 14 节新增实验室与设备管理、外键关联和关联筛选。章节按日期保留历史代码；第 13 节记录的本人角色修改问题，当前已通过服务字段过滤修正并隔离验证。页面细节完善、浏览器验收和全项目复现仍待完成。
+> **当前进度**：已讲解前后端基础、用户与个人资料管理、实验室与设备管理；第 15 节新增学生端实验室卡片列表、实验室详情和关联设备浏览，讲清查询权限、路由传参及最新代码变化。本人资料的角色与状态字段过滤、设备分页绑定已修正并隔离检查；预约逻辑、页面细节、浏览器验收和全项目复现仍待完成。章节按日期保留历史代码，最新行为以相应更新章节为准。
 >
 > **验证说明**：此前部分基础示例完成过验证。本笔记已经完成目录链接、代码块和整合示例的静态检查，但注册登录、身份验证等整合功能仍需在学习副本中实际运行确认。“已经讲过”不等于“已经在你的学习副本验证通过”。
 
@@ -28,6 +28,7 @@
 12. [新增教程：个人信息查询、修改、头像上传与开发代理](#12-profile)
 13. [新增教程：密码修改、用户分页列表与管理员增删改](#13-user-management)
 14. [新增教程：实验室管理与设备列表管理](#14-lab-equipment)
+15. [新增教程：学生端实验室列表、详情与关联设备浏览](#15-lab-browse)
 
 <a id="01-overview"></a>
 
@@ -2679,7 +2680,7 @@ location.reload()
 ### 10.10 实验室与设备管理的新增待办（第 14 节）
 
 - [ ] 修正 Equipment.vue 的 resetForm，重置 lab_id、spec、quantity 和整数 status。
-- [ ] 将设备分页绑定与实际 page_size 参数统一。
+- [x] 将设备分页绑定与实际 page_size 参数统一（2026-10-19 核对已修正，见第 15.18 节）。
 - [ ] 修正实验室容量输入的数字类型，并统一后端范围规则。
 - [ ] 统一实验室搜索提示、设备型号搜索提示与真实查询行为。
 - [ ] 明确实验室时间格式、清空和跨夜规则。
@@ -2688,6 +2689,18 @@ location.reload()
 - [ ] 核对实际数据库外键，必要时单独执行迁移。
 - [ ] 按数据规模考虑实验室选项加载与关系查询优化。
 - [ ] 完成第 14.24 节浏览器验收，更新完整复现版本。
+
+### 10.11 学生端实验室与设备浏览的新增待办（第 15 节）
+
+- [x] 增加实验室卡片列表、详情接口、按实验室 ID 查询设备和对应页面路由，完成隔离检查。
+- [x] 将实验室和设备的查询接口改为当前登录用户可调用，写入接口继续校验管理员依赖。
+- [ ] 将实验室状态筛选的 if status 改为明确判断是否传参，并验证 False 的筛选结果。
+- [ ] 明确学生能否查看停用实验室；若只允许启用资源，前后端都要落实该规则。
+- [ ] 修正 LabList.vue 的 header 插槽，清理无用表单、额外列表请求及未导入 nextTick 的闲置逻辑。
+- [ ] 整理菜单重复属性，确定设备详情页的菜单高亮规则。
+- [ ] 如需支持同页切换实验室，监听路由 lab_id，重置分页并处理请求先后顺序。
+- [ ] 按需求实现预约表单、接口、数据表、状态校验和冲突规则；当前预约按钮仍是占位。
+- [ ] 完成第 15.22 节真实浏览器验收，并与前面章节合并进行从零复现检查。
 
 <a id="11-references"></a>
 
@@ -6310,6 +6323,8 @@ export default router
 
 更新时间：2026-10-15。本节根据当前原项目新增的实验室和设备模块讲解。
 
+> **2026-10-19 更新提示**：本节保留 10 月 15 日代码。当前列表查询已改用 get_current_user，新增实验室详情和学生端浏览页面，设备分页属性也已修正；最新讲解和快照见第 15 节。下文“全部接口需要管理员”等判断仅适用于本节日期。
+
 > 本节延续用户管理中的分页、弹窗、表单校验和 CRUD 思路，新增重点是实验室与设备的关联、外键、ORM relationship、组合筛选和关联名称返回。
 >
 > 本次只更新笔记，没有改动业务源码。验证采用语法检查、内存数据库和单独的前端函数/规则检查，没有修改真实数据库；完整浏览器流程仍需要实际验收。
@@ -8762,6 +8777,510 @@ def delete_user(db: Session, user_id: int, currut_user: User):
 </details>
 
 ---
+
+<a id="15-lab-browse"></a>
+
+## 15. 新增教程：学生端实验室列表、详情与关联设备浏览
+
+更新时间：2026-10-19。本节对照第 14 节的代码快照，讲解你最近完成的前后端改动。
+
+> 本次更新教学文档，业务源码保持本次读取时的内容。第 14 节解释资源怎样创建和维护，本节解释学生怎样找到实验室、查看介绍，并查询这个实验室的设备。
+>
+> 下面明确区分三类内容：当前源码、便于理解的示例、尚未写入源码的改进方案。当前已经写出资源浏览流程；预约按钮尚未接通预约业务。功能的真实浏览器验收和全项目从零复现仍需继续完成。
+
+### 15.1 先分清四个页面的职责
+
+| 文件 | 面向的操作 | 页面主要内容 |
+| --- | --- | --- |
+| frontend/src/views/Lab.vue | 管理实验室资料 | 搜索、表格、新增和编辑弹窗、删除 |
+| frontend/src/views/Equipment.vue | 管理设备资料 | 搜索、按实验室筛选、新增和编辑；本次模板移除了删除按钮 |
+| frontend/src/views/LabList.vue | 浏览实验室 | 封面卡片、位置、容量、时间、查看设备按钮 |
+| frontend/src/views/LabEquipment.vue | 浏览某个实验室的设备 | 实验室简介、设备图片、规格、数量、状态 |
+
+菜单中，管理员看到管理入口，student 角色看到实验室列表入口。两个浏览页面不提供资源编辑表单。
+
+页面不同，仍可以复用同一查询接口。例如，Lab.vue 用实验室列表接口填充表格，LabList.vue 用这个接口填充卡片。后端返回的是数据，前端决定把数据画成什么样。
+
+注意：“菜单按角色显示”与“接口按角色授权”是两个独立机制。本次后端查询接口允许符合当前用户依赖检查的登录用户调用，并没有额外限定必须是 student。
+
+### 15.2 本次新增和修改的文件地图
+
+| 层 | 主要变化 |
+| --- | --- |
+| backend/app/services/lab_service.py | 列表新增 status 参数；新增 get_lab 按 ID 查询详情 |
+| backend/app/api/lab.py | 列表改为登录用户可查；新增 GET /{lab_id} |
+| backend/app/api/equipment.py | 设备列表改为登录用户可查 |
+| frontend/src/api/lab.js | 新增 getLab(lab_id) 请求函数 |
+| frontend/src/views/LabList.vue | 新增卡片式实验室浏览页面 |
+| frontend/src/views/LabEquipment.vue | 新增实验室介绍和关联设备浏览页面 |
+| frontend/src/router/index.js | 增加 lablist、labequipment 两个子路由 |
+| frontend/src/layouts/Layout.vue | 增加学生菜单入口，并尝试根据当前路由设置高亮 |
+| frontend/src/views/Equipment.vue | 统一 page_size 属性；移除模板中的删除按钮 |
+
+本次对照发现，实验室与设备的 models、schemas，以及 equipment_service.py 的核心业务逻辑与第 14 节快照一致。关联查询不是重新实现了一套，而是复用了之前的 lab_id 筛选和 lab_name 组装。
+
+第 15.24 节保存本次相关文件的完整快照；早期快照继续保留，便于观察功能怎样逐步长出来。
+
+### 15.3 把整个流程连起来
+
+假设数据库里有 ID 为 8 的实验室。学生打开列表，点击它的“查看设备”，整体流程如下：
+
+```mermaid
+sequenceDiagram
+    participant U as 学生
+    participant L as LabList.vue
+    participant R as Vue Router
+    participant E as LabEquipment.vue
+    participant A as FastAPI
+    participant D as 数据库
+    U->>L: 打开实验室列表
+    L->>A: GET /api/lab/list?page=1&page_size=10
+    A->>D: 搜索、统计总数、取当前页
+    D-->>A: 实验室记录
+    A-->>L: data.list 与 data.total
+    L-->>U: 显示卡片
+    U->>L: 点击 ID 为 8 的实验室
+    L->>R: push 路径及 query.lab_id
+    R->>E: /manager/labequipment?lab_id=8
+    E->>E: 读取 ID，转成数字并校验
+    par 请求实验室介绍
+        E->>A: GET /api/lab/8
+        A->>D: 查询 ID 为 8 的实验室
+        A-->>E: 实验室详情对象
+    and 请求设备列表
+        E->>A: GET /api/equipment/list?lab_id=8&page=1&page_size=10
+        A->>D: 按 lab_id 筛选设备
+        A-->>E: 设备列表与总数
+    end
+    E-->>U: 显示介绍和设备表格
+```
+
+两次后端请求都会经过原来的 request.js，携带当前 token。图中省略了重复的身份验证和统一响应包装，后面的章节会展开其中的差别。
+
+你可以把这次开发理解为：先提供一个资源入口，再把用户选择的资源 ID 传到下一页，下一页根据 ID 查询所需数据。
+
+### 15.4 为什么必须同时调整后端查询权限
+
+上一版查询接口使用：
+
+```python
+current_user: User = Depends(get_current_admin)
+```
+
+现在实验室列表、实验室详情、设备列表都使用：
+
+```python
+current_user: User = Depends(get_current_user)
+```
+
+这里的 Depends 表示“在执行接口函数之前，先执行这个依赖所要求的检查，并把结果传进来”。
+
+当前 get_current_user 会验证 token、查询用户是否存在、检查账号是否禁用。只有这些条件满足后，接口才继续执行。get_current_admin 又在这条链上检查数据库用户的 role 是否为 admin。
+
+所以改动后的权限表为：
+
+| HTTP 请求 | 当前依赖 | 当前要求 |
+| --- | --- | --- |
+| GET /api/lab/list | get_current_user | 有效登录且账号可用 |
+| GET /api/lab/{lab_id} | get_current_user | 有效登录且账号可用 |
+| GET /api/equipment/list | get_current_user | 有效登录且账号可用 |
+| POST、PUT、DELETE /api/lab… | get_current_admin | 上述条件，并且为管理员 |
+| POST、PUT、DELETE /api/equipment… | get_current_admin | 上述条件，并且为管理员 |
+
+即使函数体没有读取 current_user.name，依赖仍会执行。这个参数已经承担了进入接口前的权限检查。
+
+如果只新增学生菜单，却保留原来的管理员查询依赖，学生会进入页面，然后查询被后端拒绝。这就是本次必须同时修改前后端的原因。
+
+当前前端路由守卫仍主要检查本地是否有 token，没有逐个路由检查角色；隐藏菜单也不会阻止用户手动输入路径。资源新增、修改和删除的最终权限仍由后端依赖决定。
+
+### 15.5 新增详情接口：从路径取得一个 ID
+
+backend/app/api/lab.py 中新增：
+
+```python
+@router.get("/{lab_id}")
+def get_lab_detail(
+    lab_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    res = lab_service.get_lab(db, lab_id)
+    return Response.success(data=res)
+```
+
+其中的地址逐层拼接：
+
+```text
+main.py 注册 API 的前缀 /api
+  + 本文件 APIRouter 的前缀 /lab
+  + 装饰器上的 /{lab_id}
+  = /api/lab/{lab_id}
+```
+
+请求 /api/lab/8 时，8 占据 {lab_id} 的位置。lab_id: int 要求 FastAPI 将这个路径值解析成整数。请求 /api/lab/abc 时，路径能匹配，但整数校验失败，进入项目的参数异常处理流程。
+
+业务函数新增：
+
+```python
+def get_lab(db: Session, lab_id: int):
+    lab = db.query(Lab).filter(Lab.id == lab_id).first()
+    if not lab:
+        raise BusinessException(message="实验室不存在")
+    return LabResponse.model_validate(lab)
+```
+
+逐句理解：
+
+1. db.query(Lab) 从实验室模型发起查询。
+2. filter(Lab.id == lab_id) 限定目标 ID。
+3. first() 取第一条，没有时得到 None。
+4. 不存在时 raise 抛出业务异常，正常的 return 不再执行。
+5. 存在时把 ORM 对象转换成约定好的 LabResponse。
+
+这个接口返回“一间实验室的对象”。列表接口返回“分页对象，其中包含多个实验室”。前端不能把它们当成相同结构使用。
+
+另一个容易忽略的地方：当前 /list 定义在 /{lab_id} 前面。固定路径需要先匹配，避免 list 被当成动态 ID。这个顺序符合 [FastAPI 对路径匹配顺序的说明](https://fastapi.tiangolo.com/tutorial/path-params/#order-matters)。
+
+### 15.6 新增 status 筛选：参数接通了，但 False 分支还有问题
+
+接口新增：
+
+```python
+status: bool | None = None
+```
+
+这里有三个有意义的状态：
+
+| 传入情况 | 进入 Python 函数后的值 | 预期用途 |
+| --- | --- | --- |
+| 不传 status | None | 不按状态筛选 |
+| status=true | True | 只查启用实验室 |
+| status=false | False | 只查停用实验室 |
+
+URL 中的 true、false 是文本，FastAPI 根据 bool 类型声明把它们解析为布尔值。服务函数收到的已经是 True 或 False。
+
+当前 lab_service.py 实际写法是：
+
+```python
+if status:
+    query = query.filter(Lab.status == status)
+```
+
+Python 的 if 判断的是“条件真假”。True 会进入分支，False 和 None 都不会进入。因此当前实际结果是：
+
+| status | 当前是否追加筛选条件 | 当前结果 |
+| --- | --- | --- |
+| None | 否 | 所有状态 |
+| True | 是 | 启用状态 |
+| False | 否 | 所有状态，未实现只查停用 |
+
+本次内存数据库检查已经复现这个行为：创建一间启用、一间停用实验室后，status=False 返回两间。
+
+应把条件判断改成“是否提供了状态”。下面是修正片段，**尚未写入业务源码**：
+
+```python
+if status is not None:
+    query = query.filter(Lab.status == status)
+```
+
+不要把 if status 理解为“只要传了参数”。布尔条件里，False 本身也是一个正常的筛选值。
+
+还有第二层区别：LabList.vue 当前 params 没有 status: true，调用时不会主动要求只查启用实验室。所以当前学生卡片列表可能包含停用实验室；详情接口也没有按启用状态限制访问。
+
+如果产品要求学生只能看启用实验室，需要先明确规则，再在学生查询和详情的后端逻辑落实规则，前端也可以配合传参。仅在卡片查询里增加参数，仍不能限制用户直接按 ID 请求停用实验室详情。
+
+### 15.7 LabList.vue：从接口结果到卡片数组
+
+页面中与列表直接有关的状态是：
+
+```js
+const loading = ref(false)
+const tableData = ref([])
+const total = ref(0)
+
+const params = reactive({
+  page: 1,
+  page_size: 10,
+  keywords: '',
+  lab_id: null
+})
+```
+
+ref 用来保存一个响应式值：脚本中用 .value 读写；模板中通常自动解包。reactive 包装对象后，可以直接修改 params.page 等属性。
+
+这些名字的作用：
+
+| 名字 | 保存什么 | 谁使用它 |
+| --- | --- | --- |
+| loading | 是否正在查询 | v-loading 显示加载状态 |
+| tableData | 当前页实验室数组 | v-for 生成卡片 |
+| total | 筛选后的记录总数 | 分页组件 |
+| params | 页码、页大小、名称关键词 | 请求参数 |
+
+虽然变量还叫 tableData，这个页面并没有使用表格；名字不会改变数据的用途。
+
+load 的核心是：
+
+```js
+loading.value = true
+try {
+  const res = await getLabPageList(params)
+  if (res.code === 200) {
+    tableData.value = res.data?.list
+    total.value = res.data?.total
+  }
+} finally {
+  loading.value = false
+}
+```
+
+getLabPageList 把 params 交给 request 的 params 配置，形成 GET 查询字符串。await 等待请求对应的 Promise 完成。统一响应由 request.js 解包后，res 是业务对象，因此读取 res.data.list。
+
+finally 表示无论正常完成还是抛出错误，都会做最后的清理，所以加载状态会恢复。它不负责“吃掉”错误；LabList.vue 的 load 没有 catch，网络错误对应的 Promise 仍可能向调用方拒绝。拦截器显示错误消息，也不会自动把所有拒绝变成成功。
+
+当前 lab_id: null 对实验室列表没有筛选作用。后端列表函数没有声明 lab_id 参数。参数名称写进对象，只代表前端准备发送它，不代表后端已经实现对应功能。
+
+名称查询时：
+
+```js
+const handleSearch = () => {
+  params.page = 1
+  load()
+}
+```
+
+先回第一页，是为了避免“原来在第 5 页，新关键词只有 1 页数据，结果画面为空”。回车、查询按钮和清空输入都复用这一个函数。
+
+### 15.8 卡片怎么由一个数组生成
+
+关键模板为：
+
+```html
+<el-row :gutter="16" v-loading="loading">
+  <el-col
+    v-for="item in tableData"
+    :key="item.id"
+    :span="6"
+    style="margin-bottom: 16px"
+  >
+    <!-- 当前 item 对应一张实验室卡片 -->
+  </el-col>
+</el-row>
+```
+
+v-for 让同一段模板随数组重复。item 是这一轮取出的实验室对象；它不是保留字，可以改名，但对应表达式也要一起改。
+
+:key="item.id" 为每张卡片提供稳定标识，帮助 Vue 在更新数组时识别同一条记录。不要把 key 当成后端权限或数据库主键约束；这里是前端渲染标识。
+
+Element Plus 栅格按 24 份分列，span 为 6 时，一行通常放 4 张；gutter 控制列间间距。当前没有配置不同屏幕尺寸的列数，小屏布局仍要验收。参见 [Element Plus Layout](https://element-plus.org/en-US/component/layout)。
+
+卡片中的语法也都来自已学过的 JavaScript：
+
+```html
+<div>{{ item.name }}</div>
+<div>位置：{{ item.location || '-' }}</div>
+<div>
+  开放时间：
+  {{ item.open_time && item.close_time ? `${item.open_time} - ${item.close_time}` : '-' }}
+</div>
+```
+
+- {{ … }} 把表达式结果显示为文本。
+- || 表示左边是假值时采用右边；位置缺失或为空字符串时显示短横线。
+- && 要求开始时间和结束时间都有可用值。
+- 条件 ? 结果一 : 结果二 是三元表达式。
+- 反引号和 ${…} 构成模板字符串，用来拼接时间文本。
+
+封面有值时显示 img，没有值时显示灰色占位块，使用的是 v-if / v-else。object-fit: cover 让图片填满固定区域，图片边缘可能被裁掉。
+
+本页只是展示这些时间字符串，没有计算当前时刻能否预约，也没有验证开始时间早于结束时间。
+
+### 15.9 点击“查看设备”后，先发生前端路由跳转
+
+LabList.vue 中当前函数是：
+
+```js
+const handelViewEquipment = (lab) => {
+  router.push({
+    path: '/manager/labequipment',
+    query: { lab_id: lab.id }
+  })
+}
+```
+
+点击卡片时，模板调用 handelViewEquipment(item)，所以函数参数 lab 就是这张卡片的数据对象。
+
+假设 lab.id 为 8，导航得到：
+
+```text
+/manager/labequipment?lab_id=8
+```
+
+其中：
+
+| 部分 | 意义 |
+| --- | --- |
+| /manager/labequipment | 要显示哪个前端页面 |
+| ? | 路径与查询字符串的分隔符 |
+| lab_id=8 | 传给目标页面的查询条件 |
+
+这个 router.push 负责导航；它本身不会查询实验室数据库。进入目标页面后，页面初始化代码才发起后端请求。路由对象中的 query 用法见 [Vue Router 编程式导航](https://router.vuejs.org/guide/essentials/navigation.html)。
+
+新增路由定义在 /manager 的 children 中：
+
+```js
+{
+  path: 'lablist',
+  name: 'LabList',
+  component: () => import('@/views/LabList.vue')
+},
+{
+  path: 'labequipment',
+  name: 'LabEquipment',
+  component: () => import('@/views/LabEquipment.vue')
+}
+```
+
+这段是 children 数组中的两个对象片段。子路径没有开头的 /，因此与父路径组成完整路径。component 中的箭头函数在需要该路由时加载页面模块；布局中的 router-view 显示对应子页面。
+
+函数名中的 handel 是当前代码拼写。调用处与定义处保持一致时可以运行；以后整理时可以统一为 handle，提高可读性。
+
+### 15.10 目标页怎样取到这个 ID：useRoute 与 useRouter
+
+LabEquipment.vue 使用：
+
+```js
+const route = useRoute()
+const router = useRouter()
+
+const params = reactive({
+  page: 1,
+  page_size: 10,
+  lab_id: Number(route.query.lab_id)
+})
+```
+
+这两个工具的用途不同：
+
+| 写法 | 取得什么 | 本页用途 |
+| --- | --- | --- |
+| useRoute() | 当前路由的信息 | 读取 query.lab_id |
+| useRouter() | 路由器实例 | 返回实验室列表、跳转页面 |
+
+它们在组件的 setup 环境中调用；本页使用 script setup，所以顶层代码就在组件创建时的 setup 环境执行。原来通过 import router from '@/router' 取得实例也能导航，本页改用组合式 API。参见 [Vue Router 与组合式 API](https://router.vuejs.org/guide/advanced/composition-api.html)。
+
+普通地址 ?lab_id=8 解析出的值通常是字符串 "8"。Number("8") 将它转成数字 8，便于校验和传参。
+
+这里务必区分三个位置：
+
+```text
+浏览器页面：
+/manager/labequipment?lab_id=8
+    route.query.lab_id 读到 "8"
+
+实验室详情 API：
+GET /api/lab/8
+    后端从路径参数得到 lab_id = 8
+
+设备列表 API：
+GET /api/equipment/list?lab_id=8&page=1&page_size=10
+    后端从查询参数得到 lab_id = 8
+```
+
+同一个 ID 可以出现在不同地址的不同位置。前后端没有因为变量同名就自动相连，是代码明确完成读取、转换和再次发送。
+
+params 是页面内自定义的查询对象，其名称也不是 Vue Router 中“动态路径参数 params”的特殊用法；本页从 route.query 取 ID，没有定义 /labequipment/:lab_id 这样的动态前端路径。
+
+### 15.11 为什么 onMounted 先判断 ID，再发请求
+
+当前初始化代码为：
+
+```js
+onMounted(() => {
+  if (!Number.isInteger(params.lab_id) || params.lab_id <= 0) {
+    ElMessage.warning('缺少有效的实验室查询条件 [lab_id]')
+    return
+  }
+  loadLab()
+  loadEquipment()
+})
+```
+
+onMounted 的回调在组件挂载后运行。外面的函数调用注册回调，Vue 在适当时机执行里面的代码。
+
+Number.isInteger 判断是否为整数，<= 0 排除零和负数，|| 表示两种错误情况任意一种成立就拒绝。return 退出本次回调，后面的两个查询不会启动。
+
+| 浏览器查询值 | Number 转换结果 | 当前是否查询 |
+| --- | --- | --- |
+| "8" | 8 | 是 |
+| 未提供，得到 undefined | NaN | 否 |
+| 空字符串 | 0 | 否 |
+| "abc" | NaN | 否 |
+| "0" 或 "-1" | 0 或 -1 | 否 |
+| "1.5" | 1.5 | 否 |
+
+NaN 表示一次数字转换没有得到有效数字，Number.isInteger(NaN) 为 false。Number(null) 也会得到 0，本页同样会拒绝。
+
+这是前端的格式检查，不能证明“该 ID 在数据库里存在”。正整数 99999 仍可能没有对应实验室，这部分由 get_lab 处理。
+
+另外，这段 Number 转换不是严格限定 URL 只能包含十进制数字文本，也没有单独处理重复 query 产生的数组；如果以后需要严格的输入格式和安全整数范围，应再明确校验规则。后端类型、范围和资源检查仍然需要独立成立。
+
+### 15.12 页面为什么发两个请求，结果各放在哪里
+
+实验室介绍用：
+
+```js
+const lab = ref(null)
+
+const loadLab = async () => {
+  try {
+    const res = await getLab(params.lab_id)
+    if (res.code === 200) {
+      lab.value = res.data
+    }
+  } catch {
+    // 请求失败时由请求拦截器提示错误。
+  }
+}
+```
+
+设备列表用：
+
+```js
+const loadEquipment = async () => {
+  loading.value = true
+  try {
+    const res = await getEquipmentPageList(params)
+    if (res.code === 200) {
+      tableData.value = res.data?.list ?? []
+      total.value = res.data?.total ?? 0
+    }
+  } catch {
+    // 请求失败时由请求拦截器提示错误。
+  } finally {
+    loading.value = false
+  }
+}
+```
+
+一个页面需要的数据有两个用途：lab 保存一间实验室介绍，tableData 保存该实验室当前页的设备数组。loading 当前只表示设备列表查询是否进行中，不是两个请求合在一起的总加载状态。
+
+初始化中的 loadLab()、loadEquipment() 没有互相 await。第一个函数遇到 await 暂停后，第二个请求也可以启动，返回顺序不固定。
+
+因此当前存在这些正常可解释的现象：
+
+- 实验室介绍先出现，设备表格还在加载。
+- 设备表格先出现，实验室介绍稍后才出现。
+- 详情请求失败，设备请求仍独立进行。
+- ID 格式正确但数据库中不存在时，详情提示“实验室不存在”，设备筛选通常得到空列表。
+
+如果需求要求“确认实验室存在且可访问后才查询设备”，就需要改成先 await 详情并明确检查结果成功；当前还没有这种编排。
+
+本页的 catch 没写错误参数，表示不需要直接读取错误对象。拦截器处理网络错误或非成功业务码提示，本页避免重复提示。
+
+但“业务失败”与“Promise 拒绝”仍要区分：当前 request.js 对 HTTP 200 且 data.code 非 200 的响应会显示提示；除 code 为 401 的分支外，它仍返回业务对象。所以某些业务错误不会进入这里的 catch，而是由 if (res.code === 200) 阻止赋值。不要误记为“所有非 200 业务码都会进入 catch”。
+
+__CHAPTER_15_CONTINUE__
 
 维护说明：章节按日期保存实现过程。已有问题修正后同步更新进度；正常流程、已知边界、隔离验证和真实浏览器验收分别记录。整个项目的从零复现仍需最终完成一次完整检查。
 
