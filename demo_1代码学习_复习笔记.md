@@ -6,7 +6,7 @@
 >
 > **最终目标**：理解 lab-agent 的设计与代码，并能够从空目录创建、配置、运行和检查项目。
 >
-> **当前进度**：第 16 节新增实验室与设备预约提交教程；第 17 节讲解事务锁、设备归属、用户名唯一约束、关联删除、表单和 JWT 等修补，以及登录请求竞态处理。预约查询、审核、取消尚未实现；旧库迁移、真实 MySQL 并发与浏览器验收、全项目从零复现仍需完成。章节按日期保留历史代码，最新行为以相应更新章节为准。
+> **当前进度**：第 16 节新增实验室与设备预约提交教程；第 17 节讲解事务锁、设备归属、用户名唯一约束、关联删除、表单和 JWT 等修补，以及登录请求竞态、登录跳转的路由实例与菜单状态处理。预约查询、审核、取消尚未实现；旧库迁移、真实 MySQL 并发与浏览器验收、全项目从零复现仍需完成。章节按日期保留历史代码，最新行为以相应更新章节为准。
 >
 > **验证说明**：此前部分基础示例完成过验证。本笔记已经完成目录链接、代码块和整合示例的静态检查，但注册登录、身份验证等整合功能仍需在学习副本中实际运行确认。“已经讲过”不等于“已经在你的学习副本验证通过”。
 
@@ -31,6 +31,8 @@
 15. [新增教程：学生端实验室列表、详情与关联设备浏览](#15-lab-browse)
 16. [新增教程：实验室与设备预约提交](#16-reservation)
 17. [新增教程：逻辑修补、事务并发与回归验证](#17-logic-fixes)
+
+本次补充：[17.14 登录后地址已改变，页面为什么仍停留在登录页](#17-login-navigation)。
 
 <a id="01-overview"></a>
 
@@ -2710,10 +2712,12 @@ location.reload()
 
 - [x] 完成预约提交及 7 项指定修补的代码讲解，核对审查报告与当前代码的对应状态。
 - [x] 重新运行 19 项后端隔离回归测试、前端构建，以及预约弹窗和旧会话 401 的函数检查。
+- [x] 补充登录页与布局使用当前应用路由实例的改法；6 项前端登录回归测试通过。
 - [ ] 在有备份的学习库核对 lab → labs 的数据、ID 和外键迁移；当前没有这项自动迁移脚本。
 - [ ] 旧 users 表检查重复账号并执行用户名唯一索引升级；本次未对现有数据库执行。
 - [ ] 在真实 MySQL/InnoDB 环境验证并发预约、锁等待和回滚。
 - [ ] 完成第 16.19 节浏览器验收；第 17.16 节未解决项继续跟进。
+- [ ] 在真实浏览器确认登录后首页内容立即显示，并完成第 17.14 节的导航、退出和重新登录检查。
 - [ ] 在空目录、空学习数据库中完成一次安装、初始化、管理资源和提交预约的完整复现。
 
 <a id="11-references"></a>
@@ -9523,6 +9527,8 @@ v-model:page-size="params.page_size"
 
 ### 15.19 Layout.vue：角色菜单与当前路径高亮
 
+本节保留当时的实现和建议；后续已实际调整 Layout.vue，最新的 useRouter、useRoute 和菜单配置见[第 17.14 节](#17-login-navigation)。
+
 新增菜单项：
 
 ```html
@@ -12869,7 +12875,51 @@ if (token && config.headers?.Authorization !== `Bearer ${token}`) return
 
 authVersion 只存在当前页面的 JavaScript 模块内，刷新会重建，也不是跨标签页共享状态，更不是后端 token 撤销列表。因此它解决的是当前页面异步请求的先后问题。
 
-### 17.14 登录成功后，为什么还检查跳转结果
+<a id="17-login-navigation"></a>
+
+### 17.14 登录后地址已改变，页面为什么仍停留在登录页
+
+本次遇到的现象是：提交正确的登录信息后，浏览器地址栏已经变成 `/manager/home`，页面仍显示登录界面；手动刷新后才显示首页。这里要分别检查登录请求、保存登录信息、路由导航和页面渲染，不能仅凭地址栏变化判断首页已经显示。
+
+#### 先理解跳转对象与页面显示的关系
+
+在 `frontend/src/main.js` 中，应用通过 `app.use(router)` 注册路由实例。`<router-view>` 根据这个实例提供的当前路由决定显示哪个组件。
+
+登录页原来这样取得路由：
+
+```js
+import router from '@/router'
+```
+
+正常情况下，导入的单例与应用注册的是同一个对象，这种写法可以工作。如果模块重新加载或其他初始化方式造成实例不一致，登录处理函数可能操作另一个路由对象，而页面继续使用应用原先注册的实例。此时检查被操作对象的 `currentRoute` 也可能得到首页路径，却不能证明当前应用已经显示首页。
+
+本次隔离测试主动构造了“应用注册一个实例、登录页导入另一个实例”的条件，旧代码中能复现登录处理完成、应用仍显示登录页的情况。**这证明实例不一致能导致这类现象；尚未直接确认真实浏览器中的实例是否确实因热更新而分离。** 如果实际问题仍然存在，应继续查看组件加载和渲染错误。
+
+#### 修改一：Login.vue 使用当前应用注入的路由
+
+在 `frontend/src/views/Login.vue` 的 `<script setup>` 中，移除原来的路由对象导入，改成：
+
+```js
+import { useRouter } from 'vue-router'
+
+const router = useRouter()
+```
+
+`useRouter()` 获取当前应用注入的路由实例。放在页面的 `<script setup>` 顶层调用后，登录函数就使用这个实例进行导航，与页面中的 `<router-view>` 保持一致。这里的“顶层”是组件 setup 的作用域，不是任意普通 JavaScript 模块的顶层。相关用法见 [Vue Router 组合式 API](https://router.vuejs.org/guide/advanced/composition-api.html)。
+
+登录成功后的执行顺序仍是：
+
+```text
+loginApi 返回业务 code=200
+    → saveLoginData 保存 token、用户信息并更新共享状态
+    → 使用当前应用的 router 执行 replace('/manager/home')
+    → 当前应用的 router-view 显示 Layout 和 Home
+    → 登录函数确认目标路径并显示成功提示
+```
+
+`await router.replace(...)` 用于等待导航；真实页面是否成功显示，还需结合渲染结果确认。回归测试因此同时检查路由路径和实际渲染的首页内容。
+
+#### 保留原来的导航结果检查
 
 Login.vue 在保存登录数据后，改成等待 router.replace('/manager/home')。
 
@@ -12879,7 +12929,60 @@ replace 替换当前浏览历史记录，避免成功登录后浏览器后退马
 
 保存 token 与导航成功是两个步骤。当前保存先发生，导航失败不会自动回滚已经保存的 token；页面提示用户重试或刷新。
 
-这个变化与上一节配合：一方面避免旧请求清掉新 token，另一方面避免首页尚未真正到达，就立刻给出完整登录成功的界面反馈。
+这个变化与上一节配合：旧请求的 401 不再清除新 token；登录函数等待导航并检查目标路径后再提示成功。路径检查仍需结合页面渲染验证。
+
+#### 修改二：Layout.vue 统一导航实例与菜单状态
+
+布局中的个人信息、修改密码和退出登录也需要导航，因此在 `frontend/src/layouts/Layout.vue` 的 `<script setup>` 中使用：
+
+```js
+import { useRoute, useRouter } from 'vue-router'
+
+const router = useRouter()
+const route = useRoute()
+```
+
+二者的职责不同：
+
+| API | 返回什么 | 本次用途 |
+| --- | --- | --- |
+| `useRouter()` | 当前应用的路由器实例 | 调用 `push`、`replace` 等导航方法 |
+| `useRoute()` | 响应式的当前路由信息 | 读取 `route.path`，设置菜单选中项 |
+
+模板中只保留一个 `default-active` 配置：
+
+```html
+<el-menu router :default-active="route.path" style="height: 100%">
+  <!-- 保留已有菜单项 -->
+</el-menu>
+```
+
+原来同时存在动态 `:default-active="router.currentRoute.value.path"` 和固定 `default-active="/manager/home"`。现在移除重复配置，直接让菜单读取当前路径。`route` 是路由对象，读取 `route.path` 即可；原来的 `router.currentRoute` 是 ref，在脚本表达式中需要通过 `.value` 读取。
+
+这项修改负责同步菜单状态，主页面的组件切换由 `<router-view>` 完成。设备浏览页与实验室列表页的菜单路径映射仍是第 15.19 节所述的独立界面需求。
+
+#### 如何验证这次修改
+
+新增测试文件是 [frontend/tests/login-navigation.test.mjs](frontend/tests/login-navigation.test.mjs)。它编译真实 Login.vue 的脚本，使用实际 Vue 渲染器和 Vue Router 的内存历史，模拟接口、表单校验、保存登录信息等外部依赖；不访问现有数据库。
+
+`frontend/package.json` 增加了 `"test": "node --test"`。在 `frontend` 目录执行：
+
+```powershell
+npm.cmd test
+npm.cmd run build
+```
+
+6 项测试覆盖：正常登录后显示首页；导入路由与应用实例不一致；表单校验失败不发请求；凭证被拒绝时停留登录页；网络失败后恢复提交状态；连续提交只发送一次请求。修复前，实例不一致的用例失败；修复后 6 项全部通过，前端构建也通过。
+
+真实浏览器验收仍待完成：
+
+- [ ] 从登录页提交正确凭证，确认地址和首页内容一起切换，无需手动刷新。
+- [ ] 切换侧栏菜单，确认页面和菜单选中项一致。
+- [ ] 退出后重新登录，确认仍能直接显示首页。
+- [ ] 输入错误密码，确认停留登录页且可以再次提交。
+- [ ] 开发时修改组件触发热更新后再登录，查看是否仍需刷新，并记录控制台错误。
+
+这些隔离测试未运行真实 Vite 热更新，也未访问真实后端，不能据此把浏览器中的具体根因和完整登录流程标记为已验收。
 
 ### 17.15 回归测试到底证明了什么
 
@@ -12907,6 +13010,8 @@ ThreadPoolExecutor 模拟多个执行线程，Barrier 让它们在某一步会�
 这些检查使用临时 SQLite，测试在导入应用前覆盖 DATABASE_URL 和 JWT 测试配置，不连接项目现有 MySQL。模拟 MySQL 错误码并不等于真实 InnoDB 并发测试。
 
 前端本轮运行 npm.cmd run build，构建通过，有包体积提示。另外提取实际组件/工具函数，用模拟依赖检查了预约字段映射、重复点击、校验失败、冲突和网络失败，以及新旧会话 401 的处理。
+
+随后针对登录页路由实例新增了 6 项前端回归测试，运行 `npm.cmd test` 全部通过；测试方式、命令和浏览器待验收项见[第 17.14 节](#17-login-navigation)。这与上面的 19 项后端测试是两套检查。
 
 当前没有在真实浏览器中完成端到端验收，也没有运行旧库迁移。应把这些未做项与已通过检查分别记录。
 
@@ -12951,6 +13056,8 @@ ThreadPoolExecutor 模拟多个执行线程，Barrier 让它们在某一步会�
 | 关联资源删除可能直接触发数据库错误 | 当前对用户、实验室和设备增加检查及失败回滚 |
 | 早期 README 提示单独安装 multipart | 当前 requirements.txt 已包含它及 cryptography |
 | request.js 收到 401 直接清理登录 | 当前先确认是否属于仍有效的前端会话版本 |
+| 登录页与布局直接导入路由对象 | 当前在组件 setup 中使用 useRouter，取得应用注入的实例 |
+| 第 15.19 节菜单重复设置 default-active | 当前只保留 :default-active="route.path"，route 来自 useRoute |
 
 历史代码快照继续保留。章节上的日期说明它记录哪个阶段，不能把第 14 章的旧 models 与本章新的 reservation.py 随意混合，尤其要保持外键引用表名一致。
 
@@ -12966,8 +13073,8 @@ ThreadPoolExecutor 模拟多个执行线程，Barrier 让它们在某一步会�
 4. 写预约请求模型、服务及 API，验证正常路径和冲突路径，补齐回滚。
 5. 同步注册、管理员创建和关联删除的错误处理。
 6. 完成前端公共弹窗、父页面资源选择、容量/设备重置及删除流程。
-7. 整合 JWT UTC 修正、前端会话版本和登录导航处理。
-8. 运行 19 项隔离回归测试和前端构建，处理明确失败后再继续。
+7. 整合 JWT UTC 修正、前端会话版本和登录导航处理；登录页与布局使用 useRouter，菜单使用 useRoute 的当前路径。
+8. 运行 19 项后端隔离回归测试、6 项前端登录测试和前端构建，处理明确失败后再继续。
 9. 在真实 MySQL/InnoDB 学习库和浏览器完成第 16.19 节验收。
 10. 用新的空目录和空学习库重新走一次，记录遗漏依赖、默认管理员准备、数据初始化和迁移区别。
 
@@ -13819,11 +13926,12 @@ export default service
 
 <script setup>
 import { reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { User, Lock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import router from '@/router'
 import { loginApi } from '@/api/auth'
 import { useUser } from '@/utils/user'
+const router = useRouter()
 const { saveLoginData } = useUser()
 
 const formRef = ref()

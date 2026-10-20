@@ -1,5 +1,5 @@
 <template>
-  <div style="width: 50%">
+  <div style="width: 60%">
     <el-card>
       <template #header>
         <div style="font-size: 16px; font-weight: bold">
@@ -36,8 +36,13 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="name" label="名称" width="140" />
-        <el-table-column prop="description" label="简介" width="140" />
+        <el-table-column prop="name" label="名称" width="250" />
+        <el-table-column
+          prop="description"
+          label="简介"
+          width="350"
+          class-name="lab-description-column"
+        />
         <el-table-column prop="location" label="位置" width="200" />
         <el-table-column label="开放时间">
           <template #default="{ row }">{{ row.open_time }} - {{ row.close_time }}</template>
@@ -101,7 +106,12 @@
             <el-input type="textarea" v-model="form.location" placeholder="请输入位置" />
           </el-form-item>
           <el-form-item label="容量" prop="capacity">
-            <el-input-number v-model="form.capacity" :min="1" :precision="0" placeholder="请输入容量" />
+            <el-input-number
+              v-model="form.capacity"
+              :min="1"
+              :precision="0"
+              placeholder="请输入容量"
+            />
           </el-form-item>
           <el-form-item label="开放时间">
             <el-time-picker
@@ -305,6 +315,10 @@ const handleFileUpload = async ({ file }) => {
 </script>
 
 <style scoped>
+:deep(.lab-description-column .cell) {
+  padding-right: 50px;
+}
+
 .avatar-uploader .avatar {
   width: 130px;
   height: 130px;

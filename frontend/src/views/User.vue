@@ -1,5 +1,5 @@
 <template>
-  <div style="width: 50%">
+  <div style="width: 56%">
     <el-card>
       <template #header>
         <div style="font-size: 16px; font-weight: bold">
@@ -36,10 +36,10 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="username" label="账号" width="140" />
+        <el-table-column prop="username" label="账号" width="200" />
         <el-table-column prop="name" label="名称" width="140" />
-        <el-table-column prop="phone" label="手机号" width="160" />
-        <el-table-column prop="email" label="邮箱" width="200" />
+        <el-table-column prop="phone" label="手机号" width="170" />
+        <el-table-column prop="email" label="邮箱" width="250" />
         <el-table-column prop="role" label="角色" width="100">
           <template #default="{ row }">
             {{ row.role === 'admin' ? '管理员' : '学生' }}
@@ -184,10 +184,12 @@ const load = async () => {
 
 const rules = computed(() => ({
   username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
-  password: form.id ? [] : [
-    { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 3, max: 10, message: '密码是3-10位', trigger: 'blur' }
-  ],
+  password: form.id
+    ? []
+    : [
+        { required: true, message: '请输入密码', trigger: 'blur' },
+        { min: 3, max: 10, message: '密码是3-10位', trigger: 'blur' }
+      ],
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
   email: [{ type: 'email', message: '邮箱格式错误', trigger: 'blur' }],
   phone: [{ pattern: /^1[3-9]\d{9}$/, message: '手机号格式错误', trigger: 'blur' }]

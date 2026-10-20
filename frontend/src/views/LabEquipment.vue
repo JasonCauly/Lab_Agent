@@ -45,11 +45,10 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="lab_name" label="所属实验室" />
         <el-table-column prop="name" label="设备名称" />
-
         <el-table-column prop="spec" label="型号规格" />
         <el-table-column prop="quantity" label="数量" width="80" />
+        <el-table-column prop="lab_name" label="所属实验室" />
         <el-table-column prop="status" label="状态" width="90">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'danger'">

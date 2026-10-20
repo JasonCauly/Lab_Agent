@@ -33,12 +33,7 @@
       </el-header>
       <el-container>
         <el-aside width="220px">
-          <el-menu
-            router
-            :default-active="router.currentRoute.value.path"
-            style="height: 100%"
-            default-active="/manager/home"
-          >
+          <el-menu router :default-active="route.path" style="height: 100%">
             <el-menu-item index="/manager/home">
               <el-icon><icon-menu /></el-icon>
               <span>系统首页</span>
@@ -72,9 +67,11 @@
 
 <script setup>
 import { Menu as IconMenu, House, Setting, User } from '@element-plus/icons-vue'
-import router from '@/router'
+import { useRoute, useRouter } from 'vue-router'
 import { logout } from '@/utils/auth'
 import { useUser } from '@/utils/user'
+const router = useRouter()
+const route = useRoute()
 const { userInfo } = useUser()
 
 const handleLogout = () => {

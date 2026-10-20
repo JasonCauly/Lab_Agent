@@ -51,11 +51,12 @@
 
 <script setup>
 import { reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { User, Lock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import router from '@/router'
 import { loginApi } from '@/api/auth'
 import { useUser } from '@/utils/user'
+const router = useRouter()
 const { saveLoginData } = useUser()
 
 const formRef = ref()
