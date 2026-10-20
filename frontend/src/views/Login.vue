@@ -87,9 +87,21 @@ const login = async () => {
     const res = await loginApi(form)
     if (res.code === 200) {
       saveLoginData(res.data)
-      ElMessage.success('登录成功')
-      await router.push('/manager/home')
+      try {
+        const failure = await router.replace('/manager/home')
+        if (router.currentRoute.value.path === '/manager/home') {
+          ElMessage.success('登录成功')
+        } else {
+          console.error('登录后跳转首页未完成:', failure)
+          ElMessage.error('首页跳转未完成，请重试')
+        }
+      } catch (error) {
+        console.error('登录后加载首页失败:', error)
+        ElMessage.error('首页加载失败，请刷新页面后重试')
+      }
     }
+  } catch {
+    // 登录请求失败时由请求拦截器提示错误。
   } finally {
     loadingValue.value = false
   }

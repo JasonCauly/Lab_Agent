@@ -9,7 +9,7 @@ class Equipment(Base):
     __table_args__ = {"comment": "实验室设备表"}
 
     lab_id: Mapped[int] = mapped_column(
-        ForeignKey("lab.id"), comment="所属实验室", nullable=False
+        ForeignKey("labs.id"), comment="所属实验室", nullable=False
     )
     name: Mapped[str] = mapped_column(String(50), comment="设备名称", nullable=False)
     description: Mapped[str | None] = mapped_column(

@@ -3,12 +3,14 @@ from operator import or_
 from app.common.exceptions import BusinessException
 from app.common.response import PageResponse
 from app.models.user import User
+from app.models.reservation import Reservation
 from app.schemas.user import (
     PasswordUpdateRequest,
     UserCreateRequest,
     UserResponse,
     UserUpdateRequest,
 )
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.utils.password import hash_password, verify_password
@@ -65,7 +67,7 @@ def create_user(db: Session, data: UserCreateRequest):
     """新增用户"""
     exist = db.query(User).filter(User.username == data.username).first()
     if exist:
-        raise BusinessException(message="账号已存在")
+        raise BusinessException(message="账号已存在", code=409)
 
     user = User(
         username=data.username,
@@ -78,7 +80,13 @@ def create_user(db: Session, data: UserCreateRequest):
         status=data.status,
     )
     db.add(user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if db.query(User.id).filter(User.username == data.username).first():
+            raise BusinessException(message="账号已存在", code=409) from exc
+        raise
     db.refresh(user)
     return UserResponse.model_validate(user)
 
@@ -105,5 +113,16 @@ def delete_user(db: Session, user_id: int, currut_user: User):
     if not user:
         raise BusinessException(message="用户不存在")
 
-    db.delete(user)
-    db.commit()
+    if db.query(Reservation.id).filter(Reservation.user_id == user_id).first():
+        raise BusinessException(
+            message="该用户存在预约记录，不能删除，可将用户设为禁用状态", code=409
+        )
+
+    try:
+        db.delete(user)
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise BusinessException(
+            message="该用户存在关联数据，无法删除，可将用户设为禁用状态", code=409
+        ) from exc

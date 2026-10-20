@@ -1,3 +1,4 @@
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.common.exceptions import BusinessException
 from app.models.user import User
@@ -27,7 +28,7 @@ def register(db: Session, data: RegisterRequest):
     user = db.query(User).filter(User.username == data.username).first()
 
     if user:
-        raise BusinessException(message="账号已存在")
+        raise BusinessException(message="账号已存在", code=409)
 
     user_model = User(
         username=data.username,
@@ -40,7 +41,12 @@ def register(db: Session, data: RegisterRequest):
     db.add(user_model)
     try:
         db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if db.query(User.id).filter(User.username == data.username).first():
+            raise BusinessException(message="账号已存在", code=409) from exc
+        raise
     except Exception:
-        db.rollback
+        db.rollback()
         raise
     db.refresh(user_model)

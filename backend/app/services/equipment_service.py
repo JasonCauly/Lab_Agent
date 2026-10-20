@@ -2,11 +2,13 @@ from app.common.exceptions import BusinessException
 from app.common.response import PageResponse
 from app.models.equipment import Equipment
 from app.models.lab import Lab
+from app.models.reservation import Reservation
 from app.schemas.equipment import (
     EquipmentResponse,
     EquipmentCreateRequest,
     EquipmentUpdateRequest,
 )
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 
@@ -104,5 +106,19 @@ def delete_equipment(db: Session, equipment_id: int):
     equipment = db.query(Equipment).filter(Equipment.id == equipment_id).first()
     if not equipment:
         raise BusinessException(message="实验室设备不存在")
-    db.delete(equipment)
-    db.commit()
+    if (
+        db.query(Reservation.id)
+        .filter(Reservation.equipment_id == equipment_id)
+        .first()
+    ):
+        raise BusinessException(message="该设备存在预约记录，不能删除", code=409)
+
+    try:
+        db.delete(equipment)
+        db.commit()
+    except IntegrityError as exc:
+        # 检查后仍可能新增关联记录，提交失败时回滚并返回业务提示。
+        db.rollback()
+        raise BusinessException(
+            message="该设备存在关联数据，无法删除", code=409
+        ) from exc

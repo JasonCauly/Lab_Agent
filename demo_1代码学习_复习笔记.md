@@ -1,12 +1,12 @@
 # demo_1代码学习：复习笔记与后续任务
 
-整理日期：2026-10-19。
+整理日期：2026-10-20。
 
 > **使用方式**：先阅读概念和执行流程，再对照文件看代码。代码块中标明了文件路径。末尾的待办清单区分“已经讲过”和“尚待讲解、验证”。
 >
 > **最终目标**：理解 lab-agent 的设计与代码，并能够从空目录创建、配置、运行和检查项目。
 >
-> **当前进度**：已讲解前后端基础、用户与个人资料管理、实验室与设备管理；第 15 节新增学生端实验室卡片列表、实验室详情和关联设备浏览，讲清查询权限、路由传参及最新代码变化。本人资料的角色与状态字段过滤、设备分页绑定已修正并隔离检查；预约逻辑、页面细节、浏览器验收和全项目复现仍待完成。章节按日期保留历史代码，最新行为以相应更新章节为准。
+> **当前进度**：第 16 节新增实验室与设备预约提交教程；第 17 节讲解事务锁、设备归属、用户名唯一约束、关联删除、表单和 JWT 等修补，以及登录请求竞态处理。预约查询、审核、取消尚未实现；旧库迁移、真实 MySQL 并发与浏览器验收、全项目从零复现仍需完成。章节按日期保留历史代码，最新行为以相应更新章节为准。
 >
 > **验证说明**：此前部分基础示例完成过验证。本笔记已经完成目录链接、代码块和整合示例的静态检查，但注册登录、身份验证等整合功能仍需在学习副本中实际运行确认。“已经讲过”不等于“已经在你的学习副本验证通过”。
 
@@ -29,6 +29,8 @@
 13. [新增教程：密码修改、用户分页列表与管理员增删改](#13-user-management)
 14. [新增教程：实验室管理与设备列表管理](#14-lab-equipment)
 15. [新增教程：学生端实验室列表、详情与关联设备浏览](#15-lab-browse)
+16. [新增教程：实验室与设备预约提交](#16-reservation)
+17. [新增教程：逻辑修补、事务并发与回归验证](#17-logic-fixes)
 
 <a id="01-overview"></a>
 
@@ -2661,7 +2663,8 @@ location.reload()
 - [ ] 补齐资料修改的后端格式与长度校验。
 - [ ] 明确 null、空字符串与“清空字段”的更新语义。
 - [ ] 检查查询资料和退出登录时的共享 userInfo 同步。
-- [ ] 将当前已安装的 multipart、图标等依赖写入可复现的清单。
+- [x] python-multipart 已加入 requirements.txt 并固定版本（2026-10-20 核对）。
+- [ ] 将直接使用的图标包显式列为前端依赖；当前锁文件已通过 Element Plus 包含该传递依赖。
 - [ ] 完成第 12.17 节的真实浏览器与数据库功能检查。
 
 ### 10.9 密码与用户管理的新增待办（第 13 节）
@@ -2672,20 +2675,20 @@ location.reload()
 - [ ] 统一 status 的布尔值与单选框类型。
 - [ ] 解决创建模型名称可缺失与数据库 NOT NULL 的冲突。
 - [ ] 约束分页参数与角色允许值。
-- [ ] 处理确认删除的取消、请求失败和相关 Promise。
+- [x] 用户删除已捕获取消、关闭及请求失败；有预约记录时后端拒绝删除并提示禁用（2026-10-20，见第 17 节）。
 - [ ] 明确自我禁用、自我降级和当前用户缓存同步策略。
 - [ ] 准备学习数据库的初始管理员，完成第 13.22 节浏览器检查。
 - [ ] 若需求要求改密后所有会话失效，增加相应服务端机制。
 
 ### 10.10 实验室与设备管理的新增待办（第 14 节）
 
-- [ ] 修正 Equipment.vue 的 resetForm，重置 lab_id、spec、quantity 和整数 status。
+- [x] Equipment.vue 已按实际设备字段重置 lab_id、spec、quantity 和整数 status（2026-10-20）。
 - [x] 将设备分页绑定与实际 page_size 参数统一（2026-10-19 核对已修正，见第 15.18 节）。
-- [ ] 修正实验室容量输入的数字类型，并统一后端范围规则。
+- [x] 实验室容量改用数字输入；后端创建必填且大于 0，更新时提供的容量也须大于 0（2026-10-20）。
 - [ ] 统一实验室搜索提示、设备型号搜索提示与真实查询行为。
 - [ ] 明确实验室时间格式、清空和跨夜规则。
 - [ ] 处理实验室改名查重及数据库唯一约束策略。
-- [ ] 明确有设备时的实验室删除策略并返回业务提示。
+- [x] 实验室有设备或预约记录、设备有预约记录时禁止删除，返回业务提示并处理提交时的关联冲突（2026-10-20）。
 - [ ] 核对实际数据库外键，必要时单独执行迁移。
 - [ ] 按数据规模考虑实验室选项加载与关系查询优化。
 - [ ] 完成第 14.24 节浏览器验收，更新完整复现版本。
@@ -2699,8 +2702,19 @@ location.reload()
 - [ ] 修正 LabList.vue 的 header 插槽，清理无用表单、额外列表请求及未导入 nextTick 的闲置逻辑。
 - [ ] 整理菜单重复属性，确定设备详情页的菜单高亮规则。
 - [ ] 如需支持同页切换实验室，监听路由 lab_id，重置分页并处理请求先后顺序。
-- [ ] 按需求实现预约表单、接口、数据表、状态校验和冲突规则；当前预约按钮仍是占位。
+- [x] 预约按钮已接入公共弹窗、POST 接口和预约表，保存待审核记录；加入资源及重叠检查和并发保护（2026-10-20，第 16、17 节）。
+- [ ] 补齐预约查询、审核、取消；完善日期、零时长、数量和实验室/设备互斥规则。
 - [ ] 完成第 15.22 节真实浏览器验收，并与前面章节合并进行从零复现检查。
+
+### 10.12 预约与修补后的新增验收（第 16、17 节）
+
+- [x] 完成预约提交及 7 项指定修补的代码讲解，核对审查报告与当前代码的对应状态。
+- [x] 重新运行 19 项后端隔离回归测试、前端构建，以及预约弹窗和旧会话 401 的函数检查。
+- [ ] 在有备份的学习库核对 lab → labs 的数据、ID 和外键迁移；当前没有这项自动迁移脚本。
+- [ ] 旧 users 表检查重复账号并执行用户名唯一索引升级；本次未对现有数据库执行。
+- [ ] 在真实 MySQL/InnoDB 环境验证并发预约、锁等待和回滚。
+- [ ] 完成第 16.19 节浏览器验收；第 17.16 节未解决项继续跟进。
+- [ ] 在空目录、空学习数据库中完成一次安装、初始化、管理资源和提交预约的完整复现。
 
 <a id="11-references"></a>
 
@@ -8784,6 +8798,8 @@ def delete_user(db: Session, user_id: int, currut_user: User):
 
 更新时间：2026-10-19。本节对照第 14 节的代码快照，讲解你最近完成的前后端改动。
 
+> **2026-10-20 更新提示**：本节保留当日历史。预约入口现已接通提交功能，设备重置、容量输入和关联删除已有修补，设备管理删除按钮也已恢复。最新说明见第 16、17 节；预约查询、审核与取消仍未实现。
+
 > 本次更新教学文档，业务源码保持本次读取时的内容。第 14 节解释资源怎样创建和维护，本节解释学生怎样找到实验室、查看介绍，并查询这个实验室的设备。
 >
 > 下面明确区分三类内容：当前源码、便于理解的示例、尚未写入源码的改进方案。当前已经写出资源浏览流程；预约按钮尚未接通预约业务。功能的真实浏览器验收和全项目从零复现仍需继续完成。
@@ -11004,6 +11020,3873 @@ router.beforeEach((to, from) => {
 })
 
 export default router
+```
+
+</details>
+
+---
+
+<a id="16-reservation"></a>
+
+## 16. 新增教程：实验室与设备预约提交
+
+更新时间：2026-10-20。本章根据本轮预约代码讲解，第 17 章继续解释相应修补和验证。
+
+> 第 15 章中预约按钮是占位；现在三个预约入口都接到了公共弹窗，并能请求后端保存待审核记录。本章描述的是“提交预约”这个阶段，查询、审核和取消还需要继续开发。
+>
+> [逻辑审查](docs/logic-review-2026-10-20.md)记录修补前的问题，[指定修补说明](docs/logic-fixes-2026-10-20.md)记录后续处理。阅读时不能把两份文档都当成当前最终状态；第 17.16 节给出逐项对照。
+
+### 16.1 先确定预约要保存什么
+
+之前的实验室和设备是“资源资料”，例如名称、位置、数量。预约新增的是“谁希望在什么时间使用哪个资源”。
+
+一次预约需要回答：
+
+| 问题 | 当前字段 |
+| --- | --- |
+| 谁提交 | user_id，由当前登录用户确定 |
+| 哪个实验室 | lab_id |
+| 整间实验室还是某台/组设备 | equipment_id 是否为空 |
+| 哪一天 | date |
+| 哪个时间段 | start_time、end_time |
+| 有什么说明 | remark |
+| 目前处理到哪一步 | status |
+
+当前用一张 reservation 表保存两种预约。equipment_id 为 NULL，表示预约实验室；不为空，表示预约这个设备记录。
+
+设备的 quantity 只是资源资料中的数量。预约请求没有预约数量字段，当前按一条设备记录整体判断是否冲突，不能把它解释为已经支持“10 台设备中的 2 台”。
+
+### 16.2 文件地图与阅读顺序
+
+| 层 | 文件 | 负责什么 |
+| --- | --- | --- |
+| 数据库 | backend/app/models/reservation.py | 表、外键、状态和 ORM 关系 |
+| 输入模型 | backend/app/schemas/reservation.py | 接收预约字段、规范时间字符串 |
+| 业务 | backend/app/services/reservation_service.py | 时间、资源、归属、冲突、事务及写入 |
+| HTTP 接口 | backend/app/api/reservation.py | 接收请求、取得当前用户和数据库会话 |
+| API 注册 | backend/app/api/__init__.py | 把预约路由加入 /api |
+| 应用入口 | backend/app/main.py | 导入模型、建表、注册统一 API 和异常处理 |
+| 前端请求 | frontend/src/api/reservation.js | 封装 POST 请求 |
+| 公共弹窗 | frontend/src/components/ReserveDialog.vue | 输入日期时段、校验并提交 |
+| 实验室卡片 | frontend/src/views/LabList.vue | 选择实验室并打开弹窗 |
+| 实验室设备页 | frontend/src/views/LabEquipment.vue | 选择整间实验室或设备并打开弹窗 |
+
+建议先读模型和请求结构，再读正常流程，然后读第 17 章的并发处理。这样看到锁、重试和异常时，能够知道它们在保护哪一条业务规则。
+
+### 16.3 新表与外键：为什么预约要关联三个模型
+
+预约模型的三个外键分别指向：
+
+```text
+reservation.user_id      → users.id
+reservation.lab_id       → labs.id
+reservation.equipment_id → equipments.id，可为空
+```
+
+外键保证引用的记录存在。例如设备 ID 指向一条不存在的设备记录时，正确启用的数据库外键会拒绝这种关联。
+
+但是三个外键分别成立，不代表“设备属于提交的实验室”。A 实验室和 B 实验室设备都是真实记录时，外键仍可能同时合法。设备归属需要业务层额外检查，这正是本次修补的重点。
+
+模型中的：
+
+```python
+user: Mapped[User] = relationship()
+lab: Mapped[Lab] = relationship()
+equipment: Mapped[Equipment] = relationship()
+```
+
+让 ORM 对象可以通过 reservation.user、reservation.lab、reservation.equipment 访问关联对象。relationship 不等于自动校验所有业务关系，也不会自动替你写预约审核流程。
+
+equipment_id 使用 nullable=True，因此整间实验室预约的 equipment 关系实际可能为 None。当前类型标注仍写 Mapped[int]、Mapped[Equipment]，以后可以整理成可选类型，让编辑器提示与允许空值的实际含义一致。
+
+当前日期与时间仍保存为字符串列；预约日期列甚至允许数据库 NULL，但创建请求要求传 date。数据库约束、请求模型和业务规则是三层不同的限制。
+
+### 16.4 本次还有表名变化：lab 改为 labs
+
+当前 Lab.__tablename__ 已从 "lab" 改为 "labs"，设备模型的 ForeignKey 也从 "lab.id" 改为 "labs.id"。新预约表直接引用 labs.id。
+
+这个改动不影响前端仍使用 /api/lab 作为接口地址。数据库表名和 HTTP 路径由各自代码约定，不需要同名。
+
+但它会影响旧数据库：
+
+- 新的空数据库会按模型建立 labs 表。
+- 旧库的 lab 表不会因为修改 Python 字符串而自动改名。
+- create_all() 可能新建空 labs 表，旧数据仍在 lab 中。
+- 已有 equipments 的外键也不会自动从 lab.id 迁到 labs.id。
+
+本次已有的 add_username_unique 脚本只处理用户名唯一性，不处理表名、实验室数据或设备外键。
+
+因此从第 14、15 章升级旧学习库时，先备份，再核对实际表结构、数据、ID 和关联外键，准备迁移方案。不能在未检查时直接把旧表删除。当前没有这项自动迁移脚本，本次文档工作也没有执行旧库迁移。
+
+若从空目录、空数据库复现本轮版本，使用当前模型中的 labs 即可，不需要先创建旧 lab 表再改名。
+
+### 16.5 请求模型里的时间规范化
+
+当前 ReservationCreateRequest 接收：
+
+```python
+class ReservationCreateRequest(BaseModel):
+    lab_id: int
+    equipment_id: int | None = None
+    date: str
+    start_time: str
+    end_time: str
+    remark: str | None = None
+```
+
+没有默认值的字段是必填；equipment_id、remark 可以不传或传空值。
+
+模型还增加字段校验器：
+
+```python
+@field_validator("start_time", "end_time")
+@classmethod
+def normalize_time(cls, value: str) -> str:
+    try:
+        return datetime.strptime(value, "%H:%M").strftime("%H:%M")
+    except ValueError:
+        raise ValueError("时间格式应为 HH:MM, 例如 09:00") from None
+```
+
+这是类内部的方法片段，完整类见本章快照。
+
+可以按下面的顺序理解：
+
+1. Pydantic 创建请求模型时，处理 start_time 和 end_time 两个字段。
+2. field_validator 把这个方法注册为字段校验器，不需要接口手动调用。
+3. cls 是当前类；这次方法并未使用 cls，但 @classmethod 约定第一个参数接收类。
+4. strptime 把文本解析为日期时间对象；strftime 按指定格式输出文本。
+5. "9:00" 可以规范为 "09:00"；不能解析的值触发 ValueError。
+6. from None 隐藏异常链中原始解析错误的上下文，向外给出当前自定义错误。
+
+字段校验器返回什么，后续业务函数拿到的字段值就是什么。机制可查 [Pydantic 字段校验器](https://docs.pydantic.dev/latest/concepts/validators/)。
+
+当前统一 RequestValidationError 处理器会把字段校验错误包装为 HTTP 422、message“请求参数校验错误”。因此前端不一定直接显示这里写的 HH:MM 详细提示。
+
+还要注意：这里只规范时间，没有把 date 从 str 改为真正的日期类型。不要把“两个时间字段有校验器”理解成整个预约日期与时段已经完整校验。
+
+### 16.6 新接口怎样接入现有应用
+
+backend/app/api/reservation.py：
+
+```python
+router = APIRouter(prefix="/reservation", tags=["预约服务接口"])
+
+
+@router.post("")
+def create_reservation(
+    data: ReservationCreateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    reservation_service.create_reservation(data=data, current_user=current_user, db=db)
+    return Response.success()
+```
+
+完整地址由两个路由前缀组成：
+
+```text
+api/__init__.py：APIRouter(prefix="/api")
+        + reservation.py：prefix="/reservation"
+        + @router.post("")
+        = POST /api/reservation
+```
+
+api.include_router(reservation_router) 注册预约路由；main.py 再 app.include_router(api) 注册到应用。
+
+main.py 还显式导入 Reservation，使表的元数据在 create_all() 前注册。文件存在于 models 目录，并不等于 Python 自动执行过里面的类定义。
+
+接口使用 get_current_user，当前没有单独限制只有 student 可提交。实际要求是登录身份有效、用户存在且账号可用。
+
+请求体没有 user_id。业务代码把 current_user.id 写入预约，避免客户端直接指定预约归属。status 同样由服务端写为 0，不由本次请求自由指定。
+
+### 16.7 一次提交的完整调用链
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant P as LabList或LabEquipment
+    participant C as ReserveDialog
+    participant R as request.js
+    participant A as reservation API
+    participant S as reservation_service
+    participant D as 数据库
+    U->>P: 点击预约
+    P->>C: 传入资源信息，visible设为true
+    U->>C: 填写日期、时段和备注
+    C->>C: 校验表单，设置submitting
+    C->>R: createReservationApi(payload)
+    R->>A: POST /api/reservation，附带token
+    A->>A: 请求模型与当前用户检查
+    A->>S: data、current_user、db
+    S->>S: 日期和时段检查
+    S->>D: 获取实验室及可选设备的事务锁
+    S->>S: 检查状态、开放时间和设备归属
+    S->>D: 锁内查询重叠预约
+    alt 没有冲突
+        S->>D: 插入status=0，提交事务
+        A-->>R: code=200，data=null
+        R-->>C: 业务响应对象
+        C->>P: emit update:visible false
+        C-->>U: 提示预约已提交，等待审核
+    else 冲突或校验失败
+        S->>D: 回滚事务，释放锁
+        A-->>R: 统一错误响应
+        R-->>U: 显示错误提示
+        C->>C: 保留表单，恢复submitting
+    end
+```
+
+锁的具体作用放在第 17 章。这里先记住，查冲突和写入预约必须在同一套事务规则里完成，不能把它们当成互不相关的两步。
+
+### 16.8 业务函数先检查日期与时间
+
+服务先把请求里的开始、结束时间解析成 time 对象，再与当前时间、实验室开放时间比较。
+
+当前规则如下：
+
+| 条件 | 当前处理 |
+| --- | --- |
+| date 文本小于今天的 YYYY-MM-DD 文本 | 拒绝，预约日期不能小于当天 |
+| end_time 小于 start_time | 拒绝 |
+| 日期是今天，开始时间小于当前分钟 | 拒绝 |
+| 实验室不存在或关闭 | 拒绝 |
+| 有开放开始时间，预约开始更早 | 拒绝 |
+| 有关闭时间，预约结束更晚 | 拒绝 |
+| 设备不存在、归属不符或状态不是 1 | 拒绝 |
+
+当天时间会去掉秒和微秒，因此比较精度是分钟。预约业务仍使用服务器的 datetime.now() 本地时间；JWT 改成 UTC 并没有自动把预约业务也改成统一时区。
+
+当前存在几个明确边界：
+
+- 日期仅做字符串比较，没有验证日历上是否存在这一天。
+- 使用 end_time < start_time，等于时不会被这一条拒绝，所以零时长问题仍在。
+- 当前时段模型不支持结束时间跨到次日。
+- 实验室自身开放时间没有同等完整的保存校验，数据库中不合法的文本仍可能让 strptime 抛错。
+- props 和页面上的禁用按钮不能代替后端校验；当前后端检查设备状态是否严格等于 1。
+
+这些不是本轮教程新加的功能，而是对现有检查范围的解释。应按第 17.16 节继续完善。
+
+### 16.9 怎样判断两个时间段重叠
+
+已有预约记为 A，新预约记为 B。重叠条件是：
+
+```text
+A 的开始 < B 的结束
+并且
+A 的结束 > B 的开始
+```
+
+例如已有 09:00–10:00：
+
+| 新预约 | 是否重叠 | 原因 |
+| --- | --- | --- |
+| 09:00–10:00 | 是 | 完全相同 |
+| 09:30–10:30 | 是 | 09:30–10:00 共同占用 |
+| 08:30–09:30 | 是 | 09:00–09:30 共同占用 |
+| 08:00–11:00 | 是 | 包含已有时段 |
+| 10:00–11:00 | 否 | 只是首尾相邻 |
+| 08:00–09:00 | 否 | 只是首尾相邻 |
+
+严格的 < 和 > 让相邻时段可以衔接。理解成左闭右开的区间 [开始, 结束) 会比较方便，但前提是先要求开始小于结束；当前零时长规则还没有补齐。
+
+实际查询使用：
+
+```python
+query = db.query(Reservation).filter(
+    Reservation.date == data.date,
+    Reservation.status.in_([0, 1]),
+    func.time(Reservation.start_time) < end_time.strftime("%H:%M:%S"),
+    func.time(Reservation.end_time) > start_time.strftime("%H:%M:%S"),
+)
+```
+
+filter 中多个条件共同成立才算匹配。in_([0, 1]) 表示只考虑待审核和已通过记录。func.time 生成数据库 TIME 函数表达式，让存储的时间文本按数据库时间进行比较；它不会把任意非法历史文本都变成有效预约数据。
+
+### 16.10 实验室预约与设备预约的冲突范围不同
+
+设备预约追加：
+
+```python
+query = query.filter(Reservation.equipment_id == data.equipment_id)
+```
+
+整间实验室预约追加：
+
+```python
+query = query.filter(
+    Reservation.lab_id == lab.id,
+    Reservation.equipment_id.is_(None),
+)
+```
+
+is_(None) 对应 SQL 的 IS NULL。SQL 里的空值判断与普通值相等比较不同，所以这里明确使用空值判断表达式。
+
+当前规则是：
+
+- 实验室预约只与同实验室的“整间预约”比较。
+- 设备预约只与同一个设备 ID 的预约比较。
+- 不同设备可以在同一时段分别预约。
+- 整间实验室和其中设备，也可能在同一时段分别预约。
+
+后端现在会串行处理同一实验室的预约提交，但“先后处理请求”和“业务上互相冲突”是两个概念。事务锁不会自动补出实验室与设备之间的互斥规则。
+
+设备冲突不再依赖历史预约的 lab_id，这样设备更换所属实验室后，旧记录仍会参与同设备冲突检查。设备转移前如何处理未来预约，是另一项尚未完整定义的规则。
+
+### 16.11 两个父页面怎样复用一个弹窗
+
+LabList.vue 中保存：
+
+```js
+const reserveVisible = ref(false)
+const currentLab = ref(null)
+
+const handelReserve = (lab) => {
+  currentLab.value = lab
+  reserveVisible.value = true
+}
+```
+
+模板传入实验室：
+
+```html
+<reserve-dialog
+  v-model:visible="reserveVisible"
+  :lab-id="currentLab?.id"
+  :lab-name="currentLab?.name"
+/>
+```
+
+这里没有传设备，所以弹窗提交整间实验室预约。
+
+LabEquipment.vue 则增加 currentEquipment，区分两种按钮：
+
+```js
+const hanldeReserveLab = () => {
+  currentEquipment.value = null
+  reserveVisible.value = true
+}
+
+const hanldeReserveEquipment = (equipment) => {
+  currentEquipment.value = equipment
+  reserveVisible.value = true
+}
+```
+
+点“预约实验室”时先清空 currentEquipment 很重要：否则刚刚选过设备，再切回实验室预约，弹窗可能仍带着上一次的设备 ID。
+
+父页面负责“选中了谁”，公共组件负责“怎么填写和提交”。这是本次组件复用的主要设计思想。
+
+### 16.12 defineProps、defineEmits 和 v-model:visible
+
+ReserveDialog.vue 声明：
+
+```js
+const props = defineProps({
+  visible: Boolean,
+  labId: Number,
+  labName: String,
+  equipmentId: Number,
+  equipmentName: String
+})
+
+const emit = defineEmits(['update:visible'])
+```
+
+props 是父组件传给子组件的数据。lab-id 在模板中对应脚本中的 labId，这是 Vue 组件属性的常见命名对应。
+
+defineProps、defineEmits 是 script setup 的编译宏，不需要像 ref 一样从 vue 导入。emit 是得到的事件发送函数，可以把变化通知父组件。
+
+父组件的：
+
+```html
+<ReserveDialog v-model:visible="reserveVisible" />
+```
+
+可以理解为以下属性与事件配对：
+
+```html
+<ReserveDialog
+  :visible="reserveVisible"
+  @update:visible="reserveVisible = $event"
+/>
+```
+
+$event 就是子组件发送的值。子组件执行 emit('update:visible', false)，父组件便把自己的 reserveVisible 更新为 false，再把新的 visible 传回子组件。参见 [Vue 组件 v-model](https://vuejs.org/guide/components/v-model.html)。
+
+这条流程没有直接给 props.visible 赋值。数据由父组件持有，子组件通过事件提出更新。
+
+当前 props 只声明了类型，没有 required:true，也没有正整数约束。目标实验室详情尚未加载或失败时，父页面仍可能传入 undefined；这种输入仍需要后端兜底，页面以后可以在资源准备好前禁用按钮。
+
+### 16.13 弹窗内部怎样控制打开、重置与关闭
+
+el-dialog 读取 visible，并在关闭时向上通知：
+
+```html
+<el-dialog
+  :model-value="visible"
+  title="预约"
+  @open="handleOpen"
+  @close="emit('update:visible', false)"
+>
+  <!-- 表单和按钮 -->
+</el-dialog>
+```
+
+这里分成两层：父页面控制 ReserveDialog.visible，ReserveDialog 再把 visible 交给 el-dialog 的 model-value。
+
+打开后：
+
+```js
+const handleOpen = async () => {
+  await nextTick()
+  formRef.value?.resetFields()
+}
+```
+
+nextTick 等待本轮 Vue 更新，让表单引用有机会准备完成。?. 表示引用还没有时不继续调用。
+
+resetFields 会按表单字段保存的初始值恢复并清理校验状态，不是简单把所有字段都变成空字符串。当前初始日期为空，开始和结束默认是 09:00、17:00。恢复规则见 [Element Plus Form](https://element-plus.org/en-US/component/form.html)。
+
+默认时段不会自动匹配每个实验室的开放时间。例如实验室 16:00 关闭，用户还需要调整默认结束时间，后端也会再次检查。
+
+### 16.14 日期和时间控件：显示格式与提交值
+
+日期控件有：
+
+```html
+<el-date-picker
+  v-model="form.date"
+  type="date"
+  format="YYYY-MM-DD"
+  value-format="YYYY-MM-DD"
+/>
+```
+
+format 控制界面显示，value-format 控制绑定到 form.date 的值格式。当前绑定得到日期字符串，而不是直接把 Date 对象作为请求体字段。参见 [Element Plus DatePicker](https://element-plus.org/en-US/component/date-picker.html)。
+
+时间控件同样用 format、value-format 设置 HH:mm，绑定到 form.startTime、form.endTime。
+
+这里前端格式字符串是 YYYY-MM-DD、HH:mm；Python 的解析格式是 %Y-%m-%d、%H:%M。它们属于不同库的约定，不能互换。
+
+当前前端 rules 主要检查日期和两个时间必填，没有实现完整的“不能过去、结束必须晚于开始、必须在开放时间内”等联动校验。用户可选中一个值，不代表预约一定会被接受。
+
+### 16.15 从表单对象转换成 API 请求体
+
+前端 API 函数：
+
+```js
+export function createReservationApi(data) {
+  return request({
+    url: '/api/reservation',
+    method: 'post',
+    data
+  })
+}
+```
+
+组件提交时显式组织字段：
+
+```js
+const res = await createReservationApi({
+  lab_id: props.labId,
+  equipment_id: props.equipmentId ?? null,
+  date: form.date,
+  start_time: form.startTime,
+  end_time: form.endTime,
+  remark: form.remark
+})
+```
+
+不是所有名字都会自动转换。labId → lab_id、startTime → start_time 都是这段代码明确映射的结果。
+
+?? null 把 undefined 或 null 的设备 ID 统一为 null，让后端按整间实验室预约处理；数字设备 ID 则保持原值。
+
+名称只用来展示，接口凭 ID 查询真实记录。当前请求也没有包含 user_id 和 status，后端分别使用当前用户 ID 和固定的初始状态。
+
+request 返回 Promise，await 后 res 是拦截器解包后的业务响应对象。这个机制延续之前 loginApi 的讲解。
+
+### 16.16 submitting 为什么放在表单校验之前
+
+提交函数开头：
+
+```js
+if (submitting.value || !formRef.value) return
+submitting.value = true
+```
+
+同一个弹窗已经在提交时直接返回；表单引用还不存在时也返回。随后马上设置 submitting=true，再去等待校验，避免快速双击在异步校验期间启动两条提交。
+
+表单校验：
+
+```js
+const valid = await formRef.value.validate().catch(() => false)
+if (!valid) return
+```
+
+校验失败的拒绝被转换成 false，随后提前返回。由于这段代码位于 try 内，finally 仍会执行，把 submitting 恢复成 false。
+
+请求成功时显示“预约已提交，请等待审核”，并 emit 关闭弹窗。网络失败时进入 catch，当前填写的表单保留，finally 恢复按钮状态。
+
+当前 request.js 对业务 code=409 会提示，但仍返回业务对象，所以这类冲突通常不会进入组件 catch，而是让 if (res.code === 200) 不成立。业务 code=401 和 HTTP 请求失败会走拒绝路径。
+
+submitting 保护当前组件的一次操作；两个浏览器、两个用户甚至直接调用接口都可以同时请求，因此真正的并发占用检查还要由数据库事务负责。
+
+### 16.17 成功返回与预约状态的含义
+
+服务构造 Reservation、db.add()、db.commit() 后结束，没有返回预约 ID 或完整记录。API 调用 Response.success()，所以当前成功结构是：
+
+```json
+{
+  "code": 200,
+  "message": "请求成功",
+  "data": null
+}
+```
+
+不能在前端写 res.data.id 并期待取得新预约 ID；这项响应数据尚未提供。
+
+模型约定的状态为：
+
+| 值 | 含义 | 当前冲突查询是否考虑 |
+| --- | --- | --- |
+| 0 | 待审核 | 是 |
+| 1 | 已通过 | 是 |
+| 2 | 已拒绝 | 否 |
+| 3 | 已取消 | 否 |
+
+本轮提交只写入 0。状态字段允许表达后续阶段，不代表已经有接口把 0 改成 1、2、3。
+
+因此现在待审核记录会持续参与对应日期和时段的冲突判断，而用户还不能通过页面查看、取消，管理员也不能通过正常页面审核。下一步需要围绕真实流程补齐状态转换和权限。
+
+### 16.18 从零编写这一模块的顺序
+
+1. 先明确整间实验室和设备的预约规则，选择当前“一张表 + 可空 equipment_id”的设计。
+2. 在已有 users、labs、equipments 模型上增加 Reservation，并在建表前导入。
+3. 编写 ReservationCreateRequest，固定前后端字段名及时间格式。
+4. 写服务中的资源、日期、开放时间和归属校验。
+5. 写重叠公式和有效状态范围；结合第 17 章把校验和插入放入受保护的事务。
+6. 注册 POST /api/reservation，使用当前用户作为预约人。
+7. 添加 createReservationApi，先确认接口请求和业务响应结构。
+8. 写公共 ReserveDialog，完成 props、表单、校验、提交及关闭事件。
+9. 从两个父页面传入目标资源，实验室预约时清空设备选择。
+10. 运行已有回归测试，再进行下一节的真实浏览器验收。
+
+新库使用当前模型；旧库先完成第 16.4 节的结构核对和第 17.9 节的用户名索引升级。不要把“能在现有电脑运行”当成已经验证过从空环境复现。
+
+### 16.19 本轮预约的浏览器验收清单
+
+以下为待执行的端到端检查；本次仅运行了隔离测试和构建，没有在浏览器连真实 MySQL 完成这些操作。
+
+| 操作 | 应检查的结果 |
+| --- | --- |
+| 从实验室卡片打开预约 | 实验室名称正确，不显示设备字段 |
+| 从设备行打开预约 | 实验室与设备名称正确，请求携带正确设备 ID |
+| 先预约设备，再打开实验室预约 | equipment_id 为 null，没有遗留上次选择 |
+| 关闭弹窗后重新打开 | 字段按初始值恢复，校验提示清理 |
+| 日期留空后提交 | 前端校验不通过，不发送创建请求 |
+| 正常提交 | 新记录 user_id 来自登录用户，status=0；界面关闭并提示等待审核 |
+| 快速连续点击提交 | 单个组件不同时发出多次创建请求 |
+| 同资源完全重叠或部分重叠 | 后端返回业务 code=409，表单保留 |
+| 相邻时段 | 在其他条件满足时允许提交 |
+| 不同用户同时抢同一时段 | 真实 MySQL 下核对仅一个成功，其他冲突或可重试提示 |
+| 设备不属于指定实验室 | 后端拒绝，且没有残留预约 |
+| 实验室关闭或设备维修 | 后端拒绝 |
+| 开始早于开放、结束晚于关闭 | 后端拒绝 |
+| 当天已过去的开始时间 | 按服务端当前分钟拒绝 |
+| 零时长、非法日期 | 当前仍有漏洞，作为后续修补验收用例，不记为已正确拒绝 |
+| 查看、审核、取消预约 | 当前没有入口，不记为已实现 |
+| 直接调用接口时登录失效 | 后端拒绝，前端按当前会话处理 401 |
+
+遇到业务 code=409，要同时检查 HTTP 状态：当前 BusinessException 的统一响应使用 HTTP 200。HTTP 200 只表示 HTTP 请求得到正常处理的响应，业务是否成功还要看 JSON.code。
+
+### 16.20 本章代码快照
+
+以下记录 2026-10-20 的当前实现，包括已在代码中落地的并发修补；后续第 17 章会拆开解释。示例和快照中的时间、资源规则保持当前状态，没有自动应用本章提出的待办。
+
+<details>
+<summary><code>backend/app/models/lab.py</code></summary>
+
+```python
+from app.database import Base
+from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Boolean, Integer, String
+
+
+class Lab(Base):
+    __tablename__ = "labs"
+    __table_args__ = {"comment": "实验室信息"}
+
+    name: Mapped[str] = mapped_column(String(50), comment="名称")
+    description: Mapped[str] = mapped_column(String(500), comment="简介", nullable=True)
+    img: Mapped[str] = mapped_column(String(100), comment="封面", nullable=True)
+    location: Mapped[str] = mapped_column(String(100), comment="位置", nullable=True)
+    capacity: Mapped[int] = mapped_column(Integer, comment="容量", default=0)
+    open_time: Mapped[str] = mapped_column(
+        String(20), comment="开放的开始时间", nullable=True
+    )
+    close_time: Mapped[str] = mapped_column(
+        String(20), comment="开放的结束时间", nullable=True
+    )
+    status: Mapped[bool] = mapped_column(
+        Boolean, default=True, comment="状态: True-启用, False-禁用"
+    )
+```
+
+</details>
+
+<details>
+<summary><code>backend/app/models/equipment.py</code></summary>
+
+```python
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import ForeignKey, Integer, String
+from app.database import Base
+from app.models.lab import Lab
+
+
+class Equipment(Base):
+    __tablename__ = "equipments"
+    __table_args__ = {"comment": "实验室设备表"}
+
+    lab_id: Mapped[int] = mapped_column(
+        ForeignKey("labs.id"), comment="所属实验室", nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(50), comment="设备名称", nullable=False)
+    description: Mapped[str | None] = mapped_column(
+        String(500), comment="说明", nullable=True
+    )
+    img: Mapped[str | None] = mapped_column(String(200), comment="图片", nullable=True)
+    spec: Mapped[str | None] = mapped_column(
+        String(100), comment="型号规格", nullable=True
+    )
+    quantity: Mapped[int] = mapped_column(Integer, comment="数量", default=1)
+    status: Mapped[int] = mapped_column(default=1, comment="状态(0-维修,1-正常)")
+
+    lab: Mapped[Lab] = relationship()
+```
+
+</details>
+
+<details>
+<summary><code>backend/app/models/reservation.py</code></summary>
+
+```python
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import ForeignKey, String
+from app.database import Base
+from app.models.equipment import Equipment
+from app.models.lab import Lab
+from app.models.user import User
+
+
+class Reservation(Base):
+    __tablename__ = "reservation"
+    __table_args__ = {"comment": "预约信息"}
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id"), comment="预约人", nullable=False
+    )
+    lab_id: Mapped[int] = mapped_column(
+        ForeignKey("labs.id"), comment="实验室", nullable=False
+    )
+    equipment_id: Mapped[int] = mapped_column(
+        ForeignKey("equipments.id"), comment="设备, 空则表示预约实验室", nullable=True
+    )
+    date: Mapped[str] = mapped_column(String(20), comment="预约日期", nullable=True)
+    start_time: Mapped[str] = mapped_column(
+        String(20), comment="开始时间", nullable=False
+    )
+    end_time: Mapped[str] = mapped_column(
+        String(20), comment="结束时间", nullable=False
+    )
+    remark: Mapped[str] = mapped_column(String(255), comment="备注", nullable=True)
+    status: Mapped[int] = mapped_column(
+        default=0, comment="预约状态: 0待审核, 1已通过, 2已拒绝, 3已取消”"
+    )
+
+    user: Mapped[User] = relationship()
+    lab: Mapped[Lab] = relationship()
+    equipment: Mapped[Equipment] = relationship()
+```
+
+</details>
+
+<details>
+<summary><code>backend/app/schemas/reservation.py</code></summary>
+
+```python
+from datetime import datetime
+from pydantic import BaseModel, field_validator
+
+
+class ReservationCreateRequest(BaseModel):
+    lab_id: int
+    equipment_id: int | None = None
+    date: str
+    start_time: str
+    end_time: str
+    remark: str | None = None
+
+    @field_validator("start_time", "end_time")
+    @classmethod
+    def normalize_time(cls, value: str) -> str:
+        try:
+            # 接受 9:00 等输入，统一为 09:00 后再交给业务层。
+            return datetime.strptime(value, "%H:%M").strftime("%H:%M")
+        except ValueError:
+            raise ValueError("时间格式应为 HH:MM, 例如 09:00") from None
+```
+
+</details>
+
+<details>
+<summary><code>backend/app/services/reservation_service.py</code></summary>
+
+```python
+from datetime import datetime
+from time import sleep
+from sqlalchemy import func, update
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import Session
+from app.common.exceptions import BusinessException
+from app.models.equipment import Equipment
+from app.models.lab import Lab
+from app.models.reservation import Reservation
+from app.models.user import User
+from app.schemas.reservation import ReservationCreateRequest
+
+
+def create_reservation(db: Session, current_user: User, data: ReservationCreateRequest):
+    for attempt in range(3):
+        try:
+            _create_reservation(db, current_user, data)
+            return
+        except OperationalError as exc:
+            db.rollback()
+            error_code = exc.orig.args[0] if exc.orig.args else None
+            # InnoDB 死锁需要重试整个事务，每次仍重新持锁并检查冲突。
+            if error_code == 1213 and attempt < 2:
+                sleep(0.01 * (attempt + 1))
+                continue
+            if error_code in (1205, 1213):
+                raise BusinessException(
+                    message="预约资源正忙，请稍后重试", code=409
+                ) from exc
+            raise
+        except Exception:
+            # 包括业务校验失败在内，及时释放本次事务持有的资源锁。
+            db.rollback()
+            raise
+
+
+def _create_reservation(db: Session, current_user: User, data: ReservationCreateRequest):
+    now = datetime.now()
+    current_date = now.strftime("%Y-%m-%d")
+    current_time = now.time().replace(second=0, microsecond=0)
+    start_time = datetime.strptime(data.start_time, "%H:%M").time()
+    end_time = datetime.strptime(data.end_time, "%H:%M").time()
+    if data.date < current_date:
+        raise BusinessException(message="预约日期不能小于当天的日期")
+    if end_time < start_time:
+        raise BusinessException(message="预约的结束时间不能小于预约的开始时间")
+    if data.date == current_date and start_time < current_time:
+        raise BusinessException(message="当天预约的开始时间不能小于当前的时间")
+    # 先锁定稳定存在的实验室行，再检查冲突并提交，避免空时段无行可锁。
+    # 无值变更的 UPDATE 在 MySQL/InnoDB 和 SQLite 中均能持有写锁；
+    # 显式保留 update_time，避免预约操作修改实验室的更新时间。
+    db.execute(
+        update(Lab)
+        .where(Lab.id == data.lab_id)
+        .values(id=Lab.id, update_time=Lab.update_time)
+        .execution_options(synchronize_session=False)
+    )
+    lab = (
+        db.query(Lab)
+        .filter(Lab.id == data.lab_id)
+        .populate_existing()
+        .with_for_update()
+        .first()
+    )
+    if not lab:
+        raise BusinessException(message="实验室不存在")
+    if lab.status != 1:
+        raise BusinessException(message="实验室已关闭")
+    if lab.open_time and start_time < datetime.strptime(lab.open_time, "%H:%M").time():
+        raise BusinessException(message="预约时间不能早于实验室的开放时间")
+    if lab.close_time and end_time > datetime.strptime(lab.close_time, "%H:%M").time():
+        raise BusinessException(message="预约时间不能晚于实验室的关闭时间")
+
+    # equipment_id 不为空 则表示这次是预约的实验室设备
+    if data.equipment_id is not None:
+        equipment = (
+            db.query(Equipment)
+            .filter(Equipment.id == data.equipment_id)
+            .populate_existing()
+            .with_for_update()
+            .first()
+        )
+        if not equipment:
+            raise BusinessException(message="实验室设备不存在")
+        if equipment.lab_id != lab.id:
+            raise BusinessException(message="该设备不属于所选实验室", code=400)
+        if equipment.status != 1:
+            raise BusinessException(message="实验室设备正在维修")
+
+    # 实验室或者设备是否是可预约的状态
+    query = db.query(Reservation).filter(
+        Reservation.date == data.date,
+        Reservation.status.in_([0, 1]),  # 0表示待审核 1已通过
+        func.time(Reservation.start_time) < end_time.strftime("%H:%M:%S"),
+        func.time(Reservation.end_time) > start_time.strftime("%H:%M:%S"),
+    )
+    if data.equipment_id is not None:
+        query = query.filter(
+            Reservation.equipment_id == data.equipment_id
+        )  # 预约实验室设备
+    else:
+        query = query.filter(
+            Reservation.lab_id == lab.id, Reservation.equipment_id.is_(None)
+        )  # 只预约实验室
+    # InnoDB 默认 REPEATABLE READ 下使用当前读，避免复用认证查询建立的旧快照。
+    if query.with_for_update().first():
+        raise BusinessException(message="该时段已预约", code=409)
+
+    reservation_model = Reservation(
+        user_id=current_user.id,
+        lab_id=data.lab_id,
+        equipment_id=data.equipment_id,
+        date=data.date,
+        start_time=data.start_time,
+        end_time=data.end_time,
+        remark=data.remark,
+        status=0,
+    )
+    db.add(reservation_model)
+    db.commit()
+```
+
+</details>
+
+<details>
+<summary><code>backend/app/api/reservation.py</code></summary>
+
+```python
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+
+from app.common.response import Response
+from app.database import get_db
+from app.dependencies.auth import get_current_user
+from app.models.user import User
+from app.schemas.reservation import ReservationCreateRequest
+from app.services import reservation_service
+
+router = APIRouter(prefix="/reservation", tags=["预约服务接口"])
+
+
+@router.post("")
+def create_reservation(
+    data: ReservationCreateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    reservation_service.create_reservation(data=data, current_user=current_user, db=db)
+    return Response.success()
+```
+
+</details>
+
+<details>
+<summary><code>backend/app/api/__init__.py</code></summary>
+
+```python
+from fastapi import APIRouter, Depends
+from app.api.auth import router as auth_router
+from app.api.user import router as user_router
+from app.api.files import router as files_router
+from app.api.lab import router as lab_router
+from app.api.equipment import router as equipment_router
+from app.api.reservation import router as reservation_router
+
+api = APIRouter(prefix="/api", tags=["用户信息"])
+
+api.include_router(auth_router)
+api.include_router(user_router)
+api.include_router(files_router)
+api.include_router(lab_router)
+api.include_router(equipment_router)
+api.include_router(reservation_router)
+```
+
+</details>
+
+<details>
+<summary><code>backend/app/main.py</code></summary>
+
+```python
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
+from fastapi.staticfiles import StaticFiles
+from app.config import UPLOAD_DIR
+from app.models.equipment import Equipment
+from app.models.user import User
+from app.models.lab import Lab
+from app.models.equipment import Equipment
+from app.models.reservation import Reservation
+from app.database import engine, Base
+from app.api import api
+from app.common.exceptions import (
+    BusinessException,
+    business_exception_handler,
+    http_exception_handler,
+    validation_exception_handler,
+    global_exception_handler,
+)
+
+Base.metadata.create_all(bind=engine)  # 自动创建数据库表结构
+
+app = FastAPI()
+
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,  # 允许的前端源，不要直接写 ["*"]
+    allow_credentials=True,  # ✅ 关键：允许前端携带 Authorization token
+    allow_methods=["*"],  # 允许所有请求方法 GET POST PUT DELETE OPTIONS
+    allow_headers=["*"],  # 允许所有请求头（包含Authorization）
+)
+
+app.include_router(api)
+
+# 注册异常处理器
+app.add_exception_handler(BusinessException, business_exception_handler)
+app.add_exception_handler(HTTPException, http_exception_handler)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+# 全局的异常兜底, 必须放在最后注册!!!
+app.add_exception_handler(Exception, global_exception_handler)
+
+# 挂载静态的文件目录 http://127.0.0.1:8000/uploads/xxx.jpg
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+
+@app.get("/")
+def root():
+    return {"message": "Hello, World!"}
+```
+
+</details>
+
+<details>
+<summary><code>frontend/src/api/reservation.js</code></summary>
+
+```js
+import request from '@/utils/request'
+
+// 创建预约
+export function createReservationApi(data) {
+  return request({
+    url: '/api/reservation',
+    method: 'post',
+    data
+  })
+}
+```
+
+</details>
+
+<details>
+<summary><code>frontend/src/components/ReserveDialog.vue</code></summary>
+
+```vue
+<template>
+  <div>
+    <el-dialog
+      :model-value="visible"
+      title="预约"
+      width="450"
+      @open="handleOpen"
+      @close="emit('update:visible', false)"
+    >
+      <el-form
+        ref="formRef"
+        :rules="rules"
+        :model="form"
+        label-width="80px"
+        style="width: 100%; padding-right: 30px; padding-top: 16px"
+      >
+        <el-form-item label="实验室">
+          <el-input :model-value="labName" disabled />
+        </el-form-item>
+
+        <el-form-item v-if="equipmentId != null" label="设备">
+          <el-input :model-value="equipmentName" disabled />
+        </el-form-item>
+
+        <el-form-item label="预约日期" prop="date">
+          <el-date-picker
+            v-model="form.date"
+            type="date"
+            format="YYYY-MM-DD"
+            value-format="YYYY-MM-DD"
+            placeholder="请选择日期"
+            style="width: 100%"
+          />
+        </el-form-item>
+
+        <el-form-item label="开始时间" prop="startTime">
+          <el-time-picker
+            v-model="form.startTime"
+            format="HH:mm"
+            value-format="HH:mm"
+            placeholder="请选择开始时间"
+            style="width: 100%"
+          />
+        </el-form-item>
+
+        <el-form-item label="结束时间" prop="endTime">
+          <el-time-picker
+            v-model="form.endTime"
+            format="HH:mm"
+            value-format="HH:mm"
+            placeholder="请选择结束时间"
+            style="width: 100%"
+          />
+        </el-form-item>
+
+        <el-form-item label="备注" prop="remark">
+          <el-input type="textarea" v-model="form.remark" placeholder="请输入备注信息" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="emit('update:visible', false)">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="handleSubmit">提交预约</el-button>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup>
+import { createReservationApi } from '@/api/reservation'
+import { ElMessage } from 'element-plus'
+import { ref, reactive, nextTick } from 'vue'
+const props = defineProps({
+  visible: Boolean,
+  labId: Number,
+  labName: String,
+  equipmentId: Number,
+  equipmentName: String
+})
+const submitting = ref(false)
+const formRef = ref()
+const emit = defineEmits(['update:visible'])
+const form = reactive({
+  date: '',
+  startTime: '09:00',
+  endTime: '17:00',
+  remark: ''
+})
+const rules = {
+  date: [{ required: true, message: '请选择预约日期', trigger: 'change' }],
+  startTime: [{ required: true, message: '请选择开始时间', trigger: 'change' }],
+  endTime: [{ required: true, message: '请选择结束时间', trigger: 'change' }]
+}
+const handleOpen = async () => {
+  await nextTick()
+  formRef.value?.resetFields()
+}
+const handleSubmit = async () => {
+  if (submitting.value || !formRef.value) return
+  submitting.value = true
+  try {
+    const valid = await formRef.value.validate().catch(() => false)
+    if (!valid) return
+    const res = await createReservationApi({
+      lab_id: props.labId,
+      equipment_id: props.equipmentId ?? null,
+      date: form.date,
+      start_time: form.startTime,
+      end_time: form.endTime,
+      remark: form.remark
+    })
+    if (res.code === 200) {
+      ElMessage.success('预约已提交, 请等待审核')
+      emit('update:visible', false)
+    }
+  } catch {
+    // 请求失败时由请求拦截器提示错误，保留表单以便重试。
+  } finally {
+    submitting.value = false
+  }
+}
+</script>
+```
+
+</details>
+
+<details>
+<summary><code>frontend/src/views/LabList.vue</code></summary>
+
+```vue
+<template>
+  <div>
+    <el-card>
+      <template>
+        <div style="font-size: 16px; font-weight: bold">
+          <span>实验室列表</span>
+        </div>
+      </template>
+      <div style="margin-bottom: 10px">
+        <el-input
+          placeholder="请输入名称查询"
+          v-model="params.keywords"
+          style="width: 240px; margin-right: 8px"
+          clearable
+          @keyup.enter="handleSearch"
+          @clear="handleSearch"
+        ></el-input>
+
+        <el-button type="primary" :icon="Search" @click="handleSearch">查询</el-button>
+      </div>
+      <div>
+        <el-row :gutter="16" v-loading="loading">
+          <el-col v-for="item in tableData" :key="item.id" :span="6" style="margin-bottom: 16px">
+            <el-card shadow="hover">
+              <img
+                v-if="item.img"
+                :src="item.img"
+                alt=""
+                style="
+                  display: block;
+                  width: 100%;
+                  height: 150px;
+                  object-fit: cover;
+                  border-radius: 6px;
+                "
+              />
+              <div
+                v-else
+                style="width: 100%; height: 150px; background-color: #f5f7fa; border-radius: 6px"
+              ></div>
+              <div style="font-size: 16px; font-weight: bold; margin-top: 10px">
+                {{ item.name }}
+              </div>
+              <div style="font-size: 13px; margin-top: 6px; color: #666">
+                位置: {{ item.location || '-' }}
+              </div>
+              <div style="font-size: 13px; margin-top: 6px; color: #666">
+                容量: {{ item.capacity }} 人
+              </div>
+              <div style="font-size: 13px; margin-top: 6px; color: #666">
+                开放时间:
+                {{
+                  item.open_time && item.close_time ? `${item.open_time} - ${item.close_time}` : '-'
+                }}
+              </div>
+              <div style="margin-top: 12px; display: flex; gap: 8px">
+                <el-button style="flex: 1" @click="handelViewEquipment(item)">查看设备</el-button>
+                <el-button style="flex: 1" type="primary" @click="handelReserve(item)"
+                  >预约</el-button
+                >
+              </div>
+            </el-card>
+          </el-col>
+        </el-row>
+        <div style="margin-top: 10px; display: flex; justify-content: flex-end">
+          <el-pagination
+            v-model:current-page="params.page"
+            v-model:page-size="params.page_size"
+            :total="total"
+            background
+            layout="total, prev, pager, next"
+            @current-change="load"
+          />
+        </div>
+      </div>
+    </el-card>
+    <reserve-dialog
+      v-model:visible="reserveVisible"
+      :lab-id="currentLab?.id"
+      :lab-name="currentLab?.name"
+    ></reserve-dialog>
+  </div>
+</template>
+
+<script setup>
+import { ref, reactive, onMounted } from 'vue'
+import { getLabPageList } from '@/api/lab'
+import { Search } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import router from '@/router'
+import ReserveDialog from '@/components/ReserveDialog.vue'
+const reserveVisible = ref(false)
+const currentLab = ref(null)
+const loading = ref(false)
+const tableData = ref([])
+const labOptions = ref([])
+const total = ref(0)
+const dialogVisible = ref(false)
+const formRef = ref()
+const form = reactive({
+  id: null,
+  lab_id: null,
+  name: '',
+  description: '',
+  img: '',
+  spec: '',
+  quantity: 1,
+  status: 1
+})
+
+const params = reactive({
+  page: 1,
+  page_size: 10,
+  keywords: '',
+  lab_id: null
+})
+
+// 加载分页数据
+const load = async () => {
+  loading.value = true
+  try {
+    const res = await getLabPageList(params)
+    if (res.code === 200) {
+      tableData.value = res.data?.list
+      total.value = res.data?.total
+    }
+  } finally {
+    loading.value = false
+  }
+}
+
+const resetForm = () => {
+  Object.assign(form, {
+    id: null,
+    name: '',
+    description: '',
+    img: '',
+    location: '',
+    capacity: 20,
+    open_time: '08:30',
+    close_time: '20:30',
+    status: true
+  })
+}
+
+const handleSearch = () => {
+  params.page = 1
+  load()
+}
+
+const handleCreate = async () => {
+  resetForm()
+  dialogVisible.value = true
+  await nextTick()
+  formRef.value?.clearValidate()
+}
+
+const loadLabs = async () => {
+  const res = await getLabPageList({ page: 1, page_size: 100 })
+  if (res.code === 200) {
+    labOptions.value = res.data?.list
+  }
+}
+
+const handelViewEquipment = (lab) => {
+  router.push({ path: '/manager/labequipment', query: { lab_id: lab.id } })
+}
+
+const handelReserve = (lab) => {
+  currentLab.value = lab
+  reserveVisible.value = true
+}
+
+onMounted(() => {
+  loadLabs()
+  load()
+})
+</script>
+```
+
+</details>
+
+<details>
+<summary><code>frontend/src/views/LabEquipment.vue</code></summary>
+
+```vue
+<template>
+  <div>
+    <el-card>
+      <template #header>
+        <div style="display: flex; justify-content: space-between; align-items: center">
+          <div style="font-size: 16px; font-weight: bold">
+            <span>{{ lab?.name || '实验室' }}设备列表</span>
+          </div>
+          <div>
+            <el-button type="primary" @click="hanldeReserveLab">预约实验室</el-button>
+            <el-button @click="router.push('/manager/lablist')">返回实验室列表</el-button>
+          </div>
+        </div>
+      </template>
+      <div
+        v-if="lab"
+        style="color: #666; margin-bottom: 16px; background-color: antiquewhite; padding: 10px"
+      >
+        <div style="margin-bottom: 10px">简介：{{ lab.description }}</div>
+        <div>
+          位置：{{ lab.location }}
+          <span style="margin: 0 10px">|</span>
+          容纳 {{ lab.capacity }} 人
+          <span style="margin: 0 10px">|</span>
+          开放：{{ lab.open_time && lab.close_time ? `${lab.open_time} - ${lab.close_time}` : '-' }}
+        </div>
+      </div>
+      <el-table
+        :header-cell-style="{ backgroundColor: '#fdf', color: '#333' }"
+        :data="tableData"
+        style="width: 100%"
+        v-loading="loading"
+      >
+        <el-table-column prop="img" label="图片" width="90">
+          <template #default="{ row }">
+            <div style="min-height: 50px">
+              <el-image
+                v-if="row.img"
+                style="display: block; width: 50px; height: 50px; border-radius: 6px"
+                :src="row.img"
+                :preview-src-list="[row.img]"
+                :preview-teleported="true"
+                alt=""
+              />
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column prop="lab_name" label="所属实验室" />
+        <el-table-column prop="name" label="设备名称" />
+
+        <el-table-column prop="spec" label="型号规格" />
+        <el-table-column prop="quantity" label="数量" width="80" />
+        <el-table-column prop="status" label="状态" width="90">
+          <template #default="{ row }">
+            <el-tag :type="row.status === 1 ? 'success' : 'danger'">
+              {{ row.status === 1 ? '正常' : '维修' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="180">
+          <template #default="{ row }">
+            <el-button
+              :disabled="!row.status"
+              type="primary"
+              text
+              bg
+              @click="hanldeReserveEquipment(row)"
+              >预约</el-button
+            >
+          </template>
+        </el-table-column>
+      </el-table>
+      <div style="margin-top: 10px; display: flex; justify-content: flex-end">
+        <el-pagination
+          v-model:current-page="params.page"
+          v-model:page-size="params.page_size"
+          :total="total"
+          background
+          layout="total, prev, pager, next"
+          @current-change="loadEquipment"
+        />
+      </div>
+    </el-card>
+    <reserve-dialog
+      v-model:visible="reserveVisible"
+      :lab-id="lab?.id"
+      :lab-name="lab?.name"
+      :equipment-id="currentEquipment?.id"
+      :equipment-name="currentEquipment?.name"
+    ></reserve-dialog>
+  </div>
+</template>
+
+<script setup>
+import { getLab } from '@/api/lab'
+import { ElMessage } from 'element-plus'
+import { ref, reactive, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { getEquipmentPageList } from '@/api/equipment'
+import ReserveDialog from '@/components/ReserveDialog.vue'
+const route = useRoute()
+const router = useRouter()
+const loading = ref(false)
+const tableData = ref([])
+const total = ref(0)
+const lab = ref(null)
+const reserveVisible = ref(false)
+const currentEquipment = ref(null)
+const params = reactive({
+  page: 1,
+  page_size: 10,
+  lab_id: Number(route.query.lab_id) // "8" -> 8
+})
+
+// 加载设备分页数据
+const loadEquipment = async () => {
+  loading.value = true
+  try {
+    const res = await getEquipmentPageList(params)
+    if (res.code === 200) {
+      tableData.value = res.data?.list ?? []
+      total.value = res.data?.total ?? 0
+    }
+  } catch {
+    // 请求失败时由请求拦截器提示错误。
+  } finally {
+    loading.value = false
+  }
+}
+
+const hanldeReserveLab = () => {
+  currentEquipment.value = null
+  reserveVisible.value = true
+}
+const hanldeReserveEquipment = (equipment) => {
+  currentEquipment.value = equipment
+  reserveVisible.value = true
+}
+const loadLab = async () => {
+  try {
+    const res = await getLab(params.lab_id)
+    if (res.code === 200) {
+      lab.value = res.data
+    }
+  } catch {
+    // 请求失败时由请求拦截器提示错误。
+  }
+}
+
+onMounted(() => {
+  if (!Number.isInteger(params.lab_id) || params.lab_id <= 0) {
+    ElMessage.warning('缺少有效的实验室查询条件 [lab_id]')
+    return
+  }
+  loadLab()
+  loadEquipment()
+})
+</script>
+```
+
+</details>
+
+<a id="17-logic-fixes"></a>
+
+## 17. 新增教程：逻辑修补、事务并发与回归验证
+
+更新时间：2026-10-20。本章把修补与原来的错误原因联系起来，帮助你理解“正常操作能成功”之后，还需要怎样处理同时请求、失败和旧数据。
+
+### 17.1 怎样阅读“审查”和“修补”两份记录
+
+[logic-review-2026-10-20.md](docs/logic-review-2026-10-20.md)包含 18 项问题及两项待明确的业务规则，是修补前的检查记录。
+
+[logic-fixes-2026-10-20.md](docs/logic-fixes-2026-10-20.md)说明按问题名称选择修复的 7 项。名称与代码对应如下：
+
+| 指定修补 | 当前实现位置 |
+| --- | --- |
+| 并发重复预约 | reservation_service 的事务锁、锁内冲突检查和重试 |
+| 设备归属校验 | equipment.lab_id 与 lab.id 比较；冲突按设备 ID 查询 |
+| 并发注册同名账号 | User 唯一约束、注册/管理员创建的 IntegrityError 处理、迁移脚本 |
+| 新增设备继承旧值 | Equipment.vue.resetForm |
+| 容量输入冲突 | Lab.vue 数字控件、LabCreateRequest/LabUpdateRequest 的 Field |
+| 删除有预约用户失败 | user_service 关联检查、回滚，User.vue 捕获确认框及请求异常 |
+| JWT 时间偏差 | utils/jwt.py 使用 timezone.utc |
+
+源码还有实验室/设备关联删除、登录跳转及旧请求 401 处理等变化，本章一并讲解。它们不需要强行归入“7 项指定修补”。
+
+学习时用“错误怎样触发 → 修改怎样阻止它 → 还有哪些限制 → 怎样验证”的顺序，比只记住新增了几个 try/except 更容易复现。
+
+### 17.2 “先查没有，再创建”为什么仍然会重复
+
+假设只写：
+
+```text
+查询：这个时间段有没有预约？
+没有 → 插入预约 → 提交
+```
+
+单人逐次点击可能一直正常，但两个请求可以交错：
+
+| 时刻 | 请求 A | 请求 B |
+| --- | --- | --- |
+| 1 | 查询，没有预约 | |
+| 2 | | 查询，也没有预约 |
+| 3 | 插入并提交 | |
+| 4 | | 插入并提交 |
+
+两个请求都没有违背自己当时看见的结果，最终却占用了同一资源。
+
+这叫竞态：结果依赖多个操作的执行先后。并发并不要求每一行代码在物理上完全同时执行，只要流程交错就可能出现。
+
+前端 submitting 只能保护当前组件；另外一名用户不会共享这个变量。只给“资源、日期、开始、结束完全相同”加唯一约束，也挡不住 09:00–10:00 与 09:30–10:30 的部分重叠。
+
+因此当前预约修补使用事务锁，让影响同一资源的检查和插入按约定顺序完成。账号重名则适合用数据库唯一约束，两类问题采用的工具不同。
+
+### 17.3 先理解 Session、事务、commit 和 rollback
+
+Session 是代码和数据库交互的会话；事务把一组数据库操作组织成一次需要一起完成或撤销的工作。
+
+在预约中，可以把事务范围理解成：
+
+```text
+获取资源锁
+  → 检查最新资源及预约
+  → 插入新记录
+  → commit 成功，持久保存并释放事务锁
+
+中间发生失败
+  → rollback 撤销本次未提交操作并释放事务锁
+  → 把错误继续交给上层
+```
+
+db.add() 把对象交给会话管理，不等于已经提交；commit() 会在需要时先把变更发送给数据库，再提交事务。
+
+当前代码没有另起一个显式 with db.begin() 包裹整个函数。SQLAlchemy 会在数据库操作时启动事务，认证查询也可能已经让同一会话进入事务。服务成功时 commit，失败时 rollback，构成这里的边界。
+
+数据库写入失败后，会话需要正确回滚，才能恢复到可继续使用的状态。相关机制可查 [SQLAlchemy Session 回滚](https://docs.sqlalchemy.org/en/20/orm/session_basics.html#rolling-back)。
+
+回滚只影响本次事务尚未提交的操作，不会把别人的已提交预约撤销，也不等于删除所有历史记录。
+
+### 17.4 为什么先锁实验室，而不是只锁“查到的预约”
+
+一个从未有人预约的时间段，冲突查询会返回空结果。如果只围绕已经查到的预约行设计锁，第一次预约可能没有稳定的记录可以作为共同入口。
+
+当前实现先对已经存在的实验室行执行：
+
+```python
+db.execute(
+    update(Lab)
+    .where(Lab.id == data.lab_id)
+    .values(id=Lab.id, update_time=Lab.update_time)
+    .execution_options(synchronize_session=False)
+)
+```
+
+从 SQL 意义上，可以理解成：
+
+```sql
+UPDATE labs
+SET id = id, update_time = update_time
+WHERE id = :lab_id;
+```
+
+:lab_id 是参数占位符，这段 SQL 用于解释 ORM 表达式，不是让你把冒号原样当作普通 MySQL 交互命令执行。
+
+这次 UPDATE 不打算改变资料值，目的是在事务内取得写锁。显式保留 update_time，是因为基础模型有更新时间的 onupdate 规则；预约不应该把实验室资料的更新时间刷新成预约提交时间。
+
+synchronize_session=False 表示这次批量 SQL 不去额外同步会话中已有对象的属性。随后查询使用 populate_existing()，重新用查询到的数据填充已存在的 ORM 对象，避免继续使用旧属性。
+
+接下来的查询还加 with_for_update()。在 MySQL/InnoDB 下，它生成锁定读取，读取资源并持锁到事务结束。设备预约还会锁定设备行并重新检查归属和状态。
+
+当前按实验室作为共同入口，意味着同一实验室内不同设备、甚至不同日期的提交也会在这个实验室行上等待。它简化了顺序控制，但不是高并发吞吐量优化方案。
+
+SQLite 测试中的写锁粒度与 InnoDB 行锁不同，不能仅凭临时 SQLite 通过，就断言真实 MySQL 的所有锁行为已经验收。
+
+### 17.5 为什么冲突查询还要 with_for_update()
+
+服务最后执行：
+
+```python
+if query.with_for_update().first():
+    raise BusinessException(message="该时段已预约", code=409)
+```
+
+“已经拿到实验室锁”与“用什么方式读取预约”各有作用。
+
+MySQL/InnoDB 的 REPEATABLE READ 隔离级别下，普通一致性读取可能继续使用当前事务已有的读取快照。认证阶段先查过用户，事务就可能已经开始读取；后面再用普通查询，不一定按你直觉中的“重新看最新结果”。
+
+锁定读用于读取最新可用数据，并与其他事务的锁协调。这里让等待到实验室锁的请求，再检查刚刚已经提交的预约。原理见 [MySQL 锁定读](https://dev.mysql.com/doc/refman/8.4/en/innodb-locking-reads.html)。
+
+因此当前流程同时包含：
+
+1. 实验室行提供稳定的提交顺序入口。
+2. 设备行保护当前设备状态与归属检查。
+3. 冲突查询采用锁定读。
+4. 插入与提交完成后才释放锁。
+
+以后新增其他预约写入入口，也需要遵守一致的事务与资源检查规则；否则绕过这条服务路径的写入不会自动获得同样的保护。
+
+### 17.6 外层包装函数：失败回滚和有限重试
+
+reservation_service.py 将主要逻辑放进 _create_reservation，外层 create_reservation 负责异常处理。
+
+下划线开头是“内部辅助函数”的命名约定，不是 Python 强制的访问权限。接口调用外层函数，避免漏掉回滚和重试。
+
+当前按 range(3) 执行，attempt 依次为 0、1、2：
+
+| 异常情况 | 当前处理 |
+| --- | --- |
+| MySQL 死锁码 1213，前两次尝试 | 先回滚，短暂等待，再重新执行整个事务 |
+| 第三次仍死锁 | 回滚，返回业务 code=409，提示资源正忙 |
+| 锁等待超时码 1205 | 回滚，直接返回上述忙碌提示 |
+| 其他 OperationalError | 回滚后继续抛出原异常 |
+| 业务校验失败或其他 Exception | 回滚后继续抛出 |
+
+最多是总共执行三次，不是首次之后再重试三次。等待分别是 0.01、0.02 秒，只在前两次死锁重试前发生。
+
+死锁可以理解为多个事务各自持有某些锁，又互相等待对方释放。数据库会选择回滚某个事务，应用要准备重新执行完整流程。参见 [MySQL 死锁处理](https://dev.mysql.com/doc/refman/8.4/en/innodb-deadlocks-handling.html)。
+
+为什么不能只重试最后的 INSERT？因为数据库状态可能已经变化，资源和冲突检查也必须重新做。
+
+异常语法有两个常见形式：
+
+- 单独的 raise：把当前异常继续抛给上层。
+- raise BusinessException(...) from exc：抛出面向业务的异常，同时保留原始异常作为原因，便于定位。
+
+这里 rollback 后再 raise，确保失败不会留下仍持锁的未结束事务。当前返回的 409 是业务码，统一 BusinessException 处理器仍使用 HTTP 200。
+
+### 17.7 设备存在还不够：必须属于所选实验室
+
+当前新增：
+
+```python
+if equipment.lab_id != lab.id:
+    raise BusinessException(message="该设备不属于所选实验室", code=400)
+```
+
+例如请求 lab_id=1、equipment_id=9，而设备 9 实际属于实验室 2，接口应该拒绝。即使前端正常页面不会这样组装参数，后端仍要独立检查。
+
+设备冲突现在只按实际设备 ID 查，不再额外限定历史预约的 lab_id。这样历史记录里的实验室 ID 与设备现在的位置不同，也不会被冲突查询漏掉。
+
+这解决了审查中“跨实验室构造参数”以及“只因设备移位而漏查历史冲突”的关键部分。
+
+但管理员更新设备时，仍没有专门处理“设备还有未来有效预约，是否允许搬迁”的流程；预约历史也仍保留原来的实验室 ID。不要把冲突查询修正写成设备转移业务已全部完成。
+
+### 17.8 用户名唯一性：前置查询加数据库最终约束
+
+用户模型增加：
+
+```python
+__table_args__ = (
+    UniqueConstraint("username", name="uq_users_username"),
+    {"comment": "用户信息表"},
+)
+```
+
+原来只传一个表配置字典，现在是包含约束和配置字典的元组。UniqueConstraint 告诉数据库：users.username 不允许重复。
+
+服务仍保留“查询账号已存在”的检查，用来尽早给出友好提示。但两个请求可能同时通过，所以注册和管理员创建用户都增加了提交时的处理：
+
+```python
+try:
+    db.commit()
+except IntegrityError as exc:
+    db.rollback()
+    if db.query(User.id).filter(User.username == data.username).first():
+        raise BusinessException(message="账号已存在", code=409) from exc
+    raise
+```
+
+IntegrityError 表示数据库完整性约束失败，例如唯一约束或外键冲突。先 rollback，再查询是否确有同名账号，确认后才转换成账号已存在；其他完整性错误继续抛出。
+
+如果数据库没有真正安装唯一约束，这个异常分支不会凭空阻止同名写入。因此已有库必须执行下一节的升级。
+
+注册服务还修正了原来的 db.rollback：
+
+```python
+db.rollback()
+```
+
+不带括号只是取得方法对象；带括号才执行回滚。这与前面 JavaScript 中“函数本身”和“调用函数”是同一类基础区别。
+
+### 17.9 升级脚本为什么不能省略，怎样保证可重复执行
+
+模型声明只会影响新表创建；已有 users 表不会被 create_all() 自动追加唯一约束。
+
+backend/app/migrations/add_username_unique.py 的 upgrade(connection) 依次执行：
+
+1. inspect(connection) 读取数据库实际已有的唯一约束和索引。
+2. 如果已存在仅针对 username 的唯一约束或唯一索引，返回 False，表示无需修改。
+3. 用反射加载已有 users 表结构。
+4. GROUP BY username、HAVING COUNT(*) > 1 查找重复用户名。
+5. 发现重复则抛错，保留账号和预约数据，由维护者先核实处理。
+6. 没有重复则创建 uq_users_username 唯一索引，返回 True。
+
+脚本可以重复执行，而不会每次再建一个相同约束，这种性质叫幂等。它不是“执行多少次都会新增一条相同数据”，而是重复执行不会再次改变已达到目标的状态。
+
+操作命令必须在 backend 目录运行：
+
+```powershell
+.\.venv\Scripts\python.exe -m app.migrations.add_username_unique
+```
+
+-m 后面是 Python 模块路径，用点分隔，不能写成文件系统中的反斜杠路径。
+
+脚本读取实际项目数据库配置，会修改目标库结构。运行前应备份、确认配置目标并暂停账号创建等相关写入；若两个检查与建索引之间仍有人写入重复账号，升级也可能失败。
+
+本次只运行测试中的临时 SQLite 版本，没有对你的 MySQL 执行这个命令。该脚本也不处理第 16.4 节的 lab → labs 迁移。
+
+### 17.10 设备表单和实验室容量修补
+
+设备 resetForm 现在覆盖：
+
+```js
+Object.assign(form, {
+  id: null,
+  lab_id: null,
+  name: '',
+  description: '',
+  img: '',
+  spec: '',
+  quantity: 1,
+  status: 1
+})
+```
+
+这样从编辑切到新增时，实验室、型号、数量都恢复默认，status 保持与设备单选项一致的数字 1。上一章残留的 location、capacity、开放时间等实验室字段不再由这个重置函数添加。
+
+Object.assign 只覆盖列出的键；修补后应在重新加载的干净页面状态检查，不能指望它删除旧运行状态里曾经存在的额外属性。
+
+实验室容量控件改为：
+
+```html
+<el-input-number
+  v-model="form.capacity"
+  :min="1"
+  :precision="0"
+  placeholder="请输入容量"
+/>
+```
+
+数值控件使表单接收数值，避免原先 el-input 输入得到 "30" 字符串，却拿去做整数表单校验的冲突。
+
+后端也增加约束：
+
+```python
+# 创建模型
+capacity: int = Field(gt=0)
+
+# 更新模型
+capacity: int | None = Field(default=None, gt=0)
+```
+
+gt 是 greater than 的缩写。创建时没有默认值，表示容量必填且必须大于 0；更新时可以不传，提供时也必须大于 0。当前服务排除 None，所以不传容量不会把已有值清空。
+
+这属于请求模型的类型和数值限制，不是已经给数据库新增 CHECK 约束，也没有修复其他设备数量、状态、开放时间规则。已有库中的负容量记录不会因为改了请求模型就自动更正。
+
+### 17.11 有历史关联时怎样删除
+
+当前三个资源的删除策略如下：
+
+| 删除对象 | 服务先检查什么 | 存在关联时的结果 |
+| --- | --- | --- |
+| 用户 | 是否为当前登录用户；是否有任意预约记录 | 拒绝删除本人；有预约时提示可禁用 |
+| 实验室 | 是否有预约；是否仍有设备 | 拒绝，提示关闭实验室或先处理设备 |
+| 设备 | 是否有任意预约记录 | 拒绝删除 |
+
+这里的“任意预约”没有排除拒绝、取消或过去的记录。保留历史归属和“是否占用未来时段”是两种不同判断。
+
+为什么先查过，提交时还要捕获 IntegrityError？因为关联检查结束后、实际删除提交前，另一个请求仍可能新建关联记录。数据库外键是最后一道约束；提交失败时回滚并返回业务 code=409，避免直接把约束错误暴露成模糊的 500。
+
+前端 User.vue、Lab.vue、Equipment.vue 都把确认和请求放在同一个 try 中：
+
+```js
+try {
+  await ElMessageBox.confirm('确认删除？', '确认删除', { type: 'warning' })
+  const res = await deleteUserApi(row.id)
+  if (res.code === 200) {
+    ElMessage.success('删除用户成功')
+    await load()
+  }
+} catch {
+  // 取消、关闭和请求失败都在这里结束这次操作。
+}
+```
+
+这是简化的用户删除片段，完整写法见快照。
+
+确认框的取消和关闭也会让等待的 Promise 拒绝，catch 可以接住这种正常操作。请求失败的提示由拦截器处理。业务 code=409 通常仍返回对象，因此不会进入成功刷新分支。
+
+Equipment.vue 的删除按钮本轮已经恢复，不能继续沿用第 15 章“只有编辑入口”的描述。
+
+### 17.12 JWT 时间修正：给时间带上 UTC 时区
+
+原来：
+
+```python
+expire = datetime.now() + timedelta(hours=settings.JWT_EXPIRE_HOURS)
+```
+
+得到的是没有时区信息的本地时间。PyJWT 对 exp 的编码和比较使用 UTC 时间语义，因而把本地钟面值当作 UTC 会产生偏差。原审查在 UTC+8 环境中测到配置 24 小时、实际约 32 小时的结果。
+
+现在：
+
+```python
+expire = datetime.now(timezone.utc) + timedelta(hours=settings.JWT_EXPIRE_HOURS)
+```
+
+timezone.utc 使 datetime 明确携带 UTC 时区；timedelta 表示一个持续时长。PyJWT 再把它编码成 exp 时间戳。参见 [PyJWT 过期时间说明](https://pyjwt.readthedocs.io/en/stable/usage.html#expiration-time-claim-exp)。
+
+测试检查实际 token 的有效时长，并模拟不同本地时区，确认都接近配置小时数乘以 3600。
+
+这只修正时间计算，没有增加“修改密码立即注销所有旧 token”的服务端机制。旧令牌的撤销问题仍待处理。
+
+### 17.13 额外变化：防止旧请求的 401 清除新登录
+
+本次 auth.js 增加了模块内变量 authVersion；setToken、removeToken 每调用一次，就把它加 1。
+
+请求发出时，拦截器记录：
+
+```js
+config._authVersion = getAuthVersion()
+```
+
+它是客户端这次请求的元信息，保留在 Axios 配置对象中；没有作为认证字段交给后端。Authorization 中的 token 才用于后端认证。
+
+这个机制处理以下时序：
+
+```text
+旧会话发起请求 A，记录版本 1
+    → 用户重新登录，版本变成 2
+    → A 很晚才返回 401
+    → 如果直接 logout，就会清掉版本 2 的新登录
+```
+
+handleUnauthorized 先比较请求版本与当前版本：
+
+```js
+if (config?._authVersion !== getAuthVersion()) return
+const token = getToken()
+if (token && config.headers?.Authorization !== `Bearer ${token}`) return
+```
+
+只有错误属于当前这次登录状态，才提示并执行 logout、router.replace('/login')。token 文本相同但已经重新登录时，版本号仍能区分先后两次会话操作。
+
+一次有效注销会增加版本，所以其他同批旧请求的 401 再回来时，不会重复清理和提示。
+
+这里提前 return 只是跳过全局注销处理；响应拦截器仍会 Promise.reject，让原请求表达失败。没有把未授权请求变成业务成功。
+
+authVersion 只存在当前页面的 JavaScript 模块内，刷新会重建，也不是跨标签页共享状态，更不是后端 token 撤销列表。因此它解决的是当前页面异步请求的先后问题。
+
+### 17.14 登录成功后，为什么还检查跳转结果
+
+Login.vue 在保存登录数据后，改成等待 router.replace('/manager/home')。
+
+replace 替换当前浏览历史记录，避免成功登录后浏览器后退马上回到刚才的登录页。随后代码检查实际路径是不是 /manager/home，再显示“登录成功”。
+
+导航 Promise 可能结束但返回导航失败信息，加载路由组件也可能抛错。因此现在分别处理“没有到达首页”和“首页加载失败”。导航失败的行为可查 [Vue Router Navigation Failures](https://router.vuejs.org/guide/advanced/navigation-failures.html)。
+
+保存 token 与导航成功是两个步骤。当前保存先发生，导航失败不会自动回滚已经保存的 token；页面提示用户重试或刷新。
+
+这个变化与上一节配合：一方面避免旧请求清掉新 token，另一方面避免首页尚未真正到达，就立刻给出完整登录成功的界面反馈。
+
+### 17.15 回归测试到底证明了什么
+
+本轮重新执行了仓库现有测试：
+
+```powershell
+# 在 backend 目录
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+```
+
+结果为 19 项通过。测试文件是 [backend/tests/test_logic_fixes.py](backend/tests/test_logic_fixes.py)，主要覆盖：
+
+- 同资源完全相同和部分重叠时段的并发提交，最终一条成功、一条业务冲突。
+- 相邻时段、不同日期和不同资源；状态 0/1 阻塞，2/3 不阻塞。
+- 设备归属不符、历史实验室 ID 不同的同设备冲突、失败后释放事务。
+- 预约不改变实验室资料更新时间。
+- 模拟 MySQL 死锁重试、等待超时和重试耗尽。
+- 注册与管理员创建交错时的用户名唯一约束。
+- 任意预约历史阻止删除用户，以及关联检查后的写入竞态。
+- 唯一索引重复执行、重复账号时停止且保留数据。
+- 容量输入限制和 JWT UTC 有效期。
+
+ThreadPoolExecutor 模拟多个执行线程，Barrier 让它们在某一步会合后再继续，扩大或固定原先容易偶发的交错窗口。patch 可以把“数据库死锁”等条件替换成可控异常，从而验证错误分支。
+
+这些检查使用临时 SQLite，测试在导入应用前覆盖 DATABASE_URL 和 JWT 测试配置，不连接项目现有 MySQL。模拟 MySQL 错误码并不等于真实 InnoDB 并发测试。
+
+前端本轮运行 npm.cmd run build，构建通过，有包体积提示。另外提取实际组件/工具函数，用模拟依赖检查了预约字段映射、重复点击、校验失败、冲突和网络失败，以及新旧会话 401 的处理。
+
+当前没有在真实浏览器中完成端到端验收，也没有运行旧库迁移。应把这些未做项与已通过检查分别记录。
+
+### 17.16 原审查 18 项问题的当前状态
+
+以下按原审查的问题编号对照，避免把“修补了 7 项”误读成“18 项全部修好”。
+
+| 审查项 | 当前状态 | 仍需注意 |
+| --- | --- | --- |
+| 1 并发重复预约 | 已加入事务锁、锁定读、回滚和重试，隔离测试通过 | 真实 MySQL/InnoDB 并发待验收 |
+| 2 设备归属缺失 | 已修补 | 以后新增预约入口也要复用规则 |
+| 3 设备转移绕过预约 | 部分处理 | 同设备历史冲突不再因 lab_id 变化漏查；未来预约与转移政策尚未补齐 |
+| 4 缺少查询、审核和取消 | 未实现 | 目前只能提交待审核记录 |
+| 5 并发同名账号 | 代码与升级脚本已补齐 | 旧库约束实际升级尚未执行 |
+| 6 非法日期与零时长 | 仍待修补 | 时间文本已规范，date 仍是 str，结束等于开始仍可通过这项校验 |
+| 7 基础数据约束不足 | 部分处理 | 容量已修补；设备数量/状态、开放时间等仍待完善 |
+| 8 新增设备继承旧值 | 已修补 | 按当前字段重置 |
+| 9 容量输入类型冲突 | 已修补 | 需结合真实浏览器再验 |
+| 10 有预约用户删除异常 | 已修补 | 任意预约历史都阻止删除，提供禁用方案 |
+| 11 JWT 时区偏差 | 已修补并回归验证 | 不代表旧 token 已具备撤销机制 |
+| 12 改密后旧 token 仍有效 | 未处理 | 需定义并实现服务端会话失效策略 |
+| 13 最后一个管理员可自我降级/禁用 | 未处理 | 当前仍缺少有效管理员数量保护 |
+| 14 文件上传没有登录依赖 | 未处理 | 当前接口仍可匿名访问 |
+| 15 超过 bcrypt 字节限制的密码异常 | 未处理 | 注册、登录、改密和管理员创建需统一规则 |
+| 16 型号搜索提示与实现不符 | 未处理 | 当前只查设备名称 |
+| 17 status=False 实验室筛选被忽略 | 未处理 | 当前仍为 if status |
+| 18 用户编辑状态布尔/数字不一致 | 未处理 | 前后端或表单转换需要统一 |
+
+额外两项业务规则仍待决定和实现：整间实验室预约是否占用其中设备；设备是否允许按 quantity 中的部分数量预约。
+
+本表描述当前代码和测试范围，不把文档里提出的建议自动算作已完成修改。
+
+### 17.17 对前面教程结论的更新
+
+| 之前的记录 | 当前更新 |
+| --- | --- |
+| 第 14、15 章使用 lab 表 | 当前模型改用 labs，旧库需要单独核对迁移 |
+| 第 15 章预约按钮为空或只提示 | 当前已接入 ReserveDialog 和 POST 提交 |
+| 第 14、15 章设备 resetForm 有残留 | 已按实际设备字段修补 |
+| 第 14 章容量输入可能得到字符串 | 当前使用数字控件，并加后端正数约束 |
+| 第 15 章设备管理移除删除按钮 | 本轮已恢复 |
+| 关联资源删除可能直接触发数据库错误 | 当前对用户、实验室和设备增加检查及失败回滚 |
+| 早期 README 提示单独安装 multipart | 当前 requirements.txt 已包含它及 cryptography |
+| request.js 收到 401 直接清理登录 | 当前先确认是否属于仍有效的前端会话版本 |
+
+历史代码快照继续保留。章节上的日期说明它记录哪个阶段，不能把第 14 章的旧 models 与本章新的 reservation.py 随意混合，尤其要保持外键引用表名一致。
+
+目前图标包仍是 Element Plus 的传递依赖，锁文件已包含；把直接使用的 @element-plus/icons-vue 显式列入 package.json 仍是依赖整理项。
+
+### 17.18 怎样把本轮变化放进从零复现过程
+
+在已学完前面基础模块的前提下，建议这样复现当前版本：
+
+1. 用清单安装依赖，创建专用学习数据库，配置自己的数据库连接和 JWT 密钥。
+2. 同步当前 models：users、labs、equipments、reservation，确认外键表名一致。
+3. 新库由当前模型建表；旧库先备份、处理 lab → labs 迁移，再核对用户名唯一约束。
+4. 写预约请求模型、服务及 API，验证正常路径和冲突路径，补齐回滚。
+5. 同步注册、管理员创建和关联删除的错误处理。
+6. 完成前端公共弹窗、父页面资源选择、容量/设备重置及删除流程。
+7. 整合 JWT UTC 修正、前端会话版本和登录导航处理。
+8. 运行 19 项隔离回归测试和前端构建，处理明确失败后再继续。
+9. 在真实 MySQL/InnoDB 学习库和浏览器完成第 16.19 节验收。
+10. 用新的空目录和空学习库重新走一次，记录遗漏依赖、默认管理员准备、数据初始化和迁移区别。
+
+README 当前补充了学习环境管理员的准备方式；普通注册默认仍为 student，没有内置管理员密码。
+
+最终目标仍是你能独立解释并复现，而不是只把现有目录复制一份。完整端到端验收和从空环境复现完成前，本教程不标记为全部结束。
+
+### 17.19 本轮复习练习
+
+先自己回答，再对照右侧核对。
+
+| 问题 | 核对要点 |
+| --- | --- |
+| 两个用户都查到“没有预约”，为什么仍不能各自提交？ | 检查和写入之间会交错，需要事务内的协调 |
+| 实验室锁能不能自动禁止设备和整间实验室同一时间预约？ | 不能，锁决定操作顺序，冲突条件决定业务互斥 |
+| equipment_id 和 lab_id 都存在，是否足以证明归属正确？ | 还要检查 equipment.lab_id == lab.id |
+| 用户名模型加了唯一约束，旧数据库是否立即生效？ | 不会，需要实际升级数据库 |
+| db.rollback 与 db.rollback() 有什么不同？ | 前者取得方法，后者调用方法 |
+| 一个预约已取消，为什么当前用户删除仍被阻止？ | 删除检查保护任意历史归属，不按占用时段规则筛选 |
+| authVersion 能不能让另一台设备上的旧 token 失效？ | 不能，它是当前页面内的请求先后标识 |
+| 19 项测试通过能否证明 MySQL 并发已验收？ | 不能，当前实际数据库测试是 SQLite，MySQL 错误分支为模拟 |
+
+### 17.20 本章修补代码快照
+
+以下保存本轮相关实现。预约服务、Reservation 模型、公共弹窗及两个预约入口在第 16.20 节；本节保存其他修补文件。完整回归测试另见仓库中的 backend/tests/test_logic_fixes.py，避免把测试结果当作未执行的建议。
+
+<details>
+<summary><code>backend/app/models/user.py</code></summary>
+
+```python
+from app.database import Base
+from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import String, Boolean, UniqueConstraint
+
+
+class User(Base):
+    __tablename__ = "users"
+    __table_args__ = (
+        UniqueConstraint("username", name="uq_users_username"),
+        {"comment": "用户信息表"},
+    )
+
+    username: Mapped[str] = mapped_column(String(50), comment="账号")
+    password: Mapped[str] = mapped_column(String(255), comment="密码")
+    name: Mapped[str] = mapped_column(String(50), comment="名称")
+    role: Mapped[str] = mapped_column(
+        String(50), comment="角色: student-学生, admin-管理员"
+    )
+    email: Mapped[str | None] = mapped_column(String(50), comment="邮箱", nullable=True)
+    phone: Mapped[str | None] = mapped_column(
+        String(50), comment="手机号", nullable=True
+    )
+    avatar: Mapped[str | None] = mapped_column(
+        String(255), comment="头像", nullable=True
+    )
+    status: Mapped[bool] = mapped_column(
+        Boolean, default=True, comment="状态: True-启用, False-禁用"
+    )
+```
+
+</details>
+
+<details>
+<summary><code>backend/app/schemas/lab.py</code></summary>
+
+```python
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class LabResponse(BaseModel):
+    id: int
+    name: str
+    description: str | None = None
+    location: str | None = None
+    img: str | None = None
+    capacity: int
+    open_time: str | None = None
+    close_time: str | None = None
+    status: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LabCreateRequest(BaseModel):
+    name: str
+    description: str | None = None
+    img: str | None = None
+    location: str | None = None
+    capacity: int = Field(gt=0)
+    open_time: str | None = None
+    close_time: str | None = None
+    status: bool = True
+
+
+class LabUpdateRequest(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    location: str | None = None
+    img: str | None = None
+    capacity: int | None = Field(default=None, gt=0)
+    open_time: str | None = None
+    close_time: str | None = None
+    status: bool | None = None
+```
+
+</details>
+
+<details>
+<summary><code>backend/app/services/auth_service.py</code></summary>
+
+```python
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+from app.common.exceptions import BusinessException
+from app.models.user import User
+from app.schemas.auth import LoginRequest, LoginResponse, RegisterRequest
+from app.schemas.user import UserResponse
+from app.utils.password import hash_password, verify_password
+from app.utils.jwt import create_access_token
+
+
+def login(db: Session, data: LoginRequest):
+    # 根据用户名查询用户信息
+    user = db.query(User).filter(User.username == data.username).first()
+
+    # 判断账号和密码是否正确
+    if not user or not verify_password(data.password, user.password):
+        raise BusinessException(message="账号或密码错误")
+    # 判断账号是否被禁用
+    if user.status != 1:
+        raise BusinessException(message="账号已被禁用")
+    # 生成访问令牌
+    access_token = create_access_token(user.id)
+    return LoginResponse(token=access_token, user=UserResponse.model_validate(user))
+
+
+def register(db: Session, data: RegisterRequest):
+    # 根据用户账号查询数据库
+    user = db.query(User).filter(User.username == data.username).first()
+
+    if user:
+        raise BusinessException(message="账号已存在", code=409)
+
+    user_model = User(
+        username=data.username,
+        password=hash_password(data.password),
+        name=data.name or data.username,
+        email=data.email,
+        role="student",
+        status=1,
+    )
+    db.add(user_model)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if db.query(User.id).filter(User.username == data.username).first():
+            raise BusinessException(message="账号已存在", code=409) from exc
+        raise
+    except Exception:
+        db.rollback()
+        raise
+    db.refresh(user_model)
+```
+
+</details>
+
+<details>
+<summary><code>backend/app/services/user_service.py</code></summary>
+
+```python
+from operator import or_
+
+from app.common.exceptions import BusinessException
+from app.common.response import PageResponse
+from app.models.user import User
+from app.models.reservation import Reservation
+from app.schemas.user import (
+    PasswordUpdateRequest,
+    UserCreateRequest,
+    UserResponse,
+    UserUpdateRequest,
+)
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app.utils.password import hash_password, verify_password
+
+
+def get_user_info(user: User) -> UserResponse:
+    return UserResponse.model_validate(user)
+
+
+def update_user_info(db: Session, user: User, data: UserUpdateRequest):
+    user_dict = data.model_dump(
+        exclude_none=True, exclude={"role", "status"}
+    )  # pydantic对象转换成字典
+    for field, value in user_dict.items():
+        setattr(user, field, value)
+    db.commit()
+    db.refresh(user)
+    return UserResponse.model_validate(user)
+
+
+def update_password(db: Session, user: User, data: PasswordUpdateRequest):
+    if not verify_password(data.old_password, user.password):
+        raise BusinessException(message="原密码错误!")
+    if data.old_password == data.new_password:
+        raise BusinessException(message="新密码不能跟原密码相同!")
+    user.password = hash_password(data.new_password)
+    db.commit()
+    db.refresh(user)
+
+
+def get_user_page_list(
+    db: Session, page: int, page_size: int, keywords: str | None = None
+):
+    # select * from user where username like '%张%' or name like '%张%';
+    query = db.query(User)
+
+    if keywords:
+        query = query.filter(
+            or_(User.username.ilike(f"%{keywords}%"), User.name.ilike(f"%{keywords}%"))
+        )
+    total = query.count()
+    items = (
+        query.order_by(User.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return PageResponse(
+        list=[UserResponse.model_validate(item) for item in items], total=total
+    )
+
+
+def create_user(db: Session, data: UserCreateRequest):
+    """新增用户"""
+    exist = db.query(User).filter(User.username == data.username).first()
+    if exist:
+        raise BusinessException(message="账号已存在", code=409)
+
+    user = User(
+        username=data.username,
+        password=hash_password(data.password),
+        name=data.name,
+        role=data.role,
+        email=data.email,
+        phone=data.phone,
+        avatar=data.avatar,
+        status=data.status,
+    )
+    db.add(user)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if db.query(User.id).filter(User.username == data.username).first():
+            raise BusinessException(message="账号已存在", code=409) from exc
+        raise
+    db.refresh(user)
+    return UserResponse.model_validate(user)
+
+
+def update_user(db: Session, user_id: int, data: UserUpdateRequest):
+    """更新用户"""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise BusinessException(message="用户不存在")
+    user_dict = data.model_dump(exclude_none=True)
+    for field, value in user_dict.items():
+        setattr(user, field, value)
+    db.commit()
+    db.refresh(user)
+    return UserResponse.model_validate(user)
+
+
+def delete_user(db: Session, user_id: int, currut_user: User):
+    """删除用户"""
+    if user_id == currut_user.id:
+        raise BusinessException(message="不能删除当前登录的账号")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise BusinessException(message="用户不存在")
+
+    if db.query(Reservation.id).filter(Reservation.user_id == user_id).first():
+        raise BusinessException(
+            message="该用户存在预约记录，不能删除，可将用户设为禁用状态", code=409
+        )
+
+    try:
+        db.delete(user)
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise BusinessException(
+            message="该用户存在关联数据，无法删除，可将用户设为禁用状态", code=409
+        ) from exc
+```
+
+</details>
+
+<details>
+<summary><code>backend/app/services/lab_service.py</code></summary>
+
+```python
+from operator import or_
+from app.common.exceptions import BusinessException
+from app.common.response import PageResponse
+from app.models.equipment import Equipment
+from app.models.lab import Lab
+from app.models.reservation import Reservation
+from app.schemas.lab import (
+    LabCreateRequest,
+    LabResponse,
+    LabUpdateRequest,
+)
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app.utils.password import hash_password, verify_password
+
+
+def get_lab_info(Lab: Lab) -> LabResponse:
+    return LabResponse.model_validate(Lab)
+
+
+def update_Lab_info(db: Session, Lab: Lab, data: LabUpdateRequest):
+    Lab_dict = data.model_dump(
+        exclude_none=True, exclude={"role", "status"}
+    )  # pydantic对象转换成字典
+    for field, value in Lab_dict.items():
+        setattr(Lab, field, value)
+    db.commit()
+    db.refresh(Lab)
+    return LabResponse.model_validate(Lab)
+
+
+def get_lab_page_list(
+    db: Session,
+    page: int,
+    page_size: int,
+    keywords: str | None = None,
+    status: bool | None = None,
+):
+    # select * from Lab where name like '%计算机实验室%'
+    query = db.query(Lab)
+
+    if keywords:
+        query = query.filter(Lab.name.ilike(f"%{keywords}%"))
+    if status:
+        query = query.filter(Lab.status == status)
+    total = query.count()
+    items = (
+        query.order_by(Lab.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return PageResponse(
+        list=[LabResponse.model_validate(item) for item in items], total=total
+    )
+
+
+def get_lab(db: Session, lab_id: int):
+    lab = db.query(Lab).filter(Lab.id == lab_id).first()
+    if not lab:
+        raise BusinessException(message="实验室不存在")
+    return LabResponse.model_validate(lab)
+
+
+def create_lab(db: Session, data: LabCreateRequest):
+    """新增"""
+
+    exist = db.query(Lab).filter(Lab.name == data.name).first()
+    if exist:
+        raise BusinessException(message="实验室已存在")
+
+    lab = Lab(
+        **data.model_dump(exclude_none=True)
+    )  # {"key1": "value1", "key2": "value2"} -> key1=value1, key2=value2
+    db.add(lab)
+    db.commit()
+    db.refresh(lab)
+    return LabResponse.model_validate(lab)
+
+
+def update_lab(db: Session, Lab_id: int, data: LabUpdateRequest):
+    """更新"""
+
+    lab = db.query(Lab).filter(Lab.id == Lab_id).first()
+    if not lab:
+        raise BusinessException(message="实验室不存在")
+    Lab_dict = data.model_dump(exclude_none=True)
+    for field, value in Lab_dict.items():
+        setattr(lab, field, value)
+    db.commit()
+    db.refresh(lab)
+    return LabResponse.model_validate(lab)
+
+
+def delete_lab(db: Session, Lab_id: int):
+    """删除"""
+
+    lab = db.query(Lab).filter(Lab.id == Lab_id).first()
+    if not lab:
+        raise BusinessException(message="实验室不存在")
+
+    if db.query(Reservation.id).filter(Reservation.lab_id == Lab_id).first():
+        raise BusinessException(
+            message="该实验室存在预约记录，不能删除，可将实验室设为关闭状态", code=409
+        )
+    if db.query(Equipment.id).filter(Equipment.lab_id == Lab_id).first():
+        raise BusinessException(
+            message="该实验室下仍有设备，请先删除或转移设备", code=409
+        )
+
+    try:
+        db.delete(lab)
+        db.commit()
+    except IntegrityError as exc:
+        # 检查后仍可能新增关联记录，提交失败时回滚并返回业务提示。
+        db.rollback()
+        raise BusinessException(
+            message="该实验室存在关联数据，无法删除", code=409
+        ) from exc
+```
+
+</details>
+
+<details>
+<summary><code>backend/app/services/equipment_service.py</code></summary>
+
+```python
+from app.common.exceptions import BusinessException
+from app.common.response import PageResponse
+from app.models.equipment import Equipment
+from app.models.lab import Lab
+from app.models.reservation import Reservation
+from app.schemas.equipment import (
+    EquipmentResponse,
+    EquipmentCreateRequest,
+    EquipmentUpdateRequest,
+)
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+
+def get_equipment_page_list(
+    db: Session,
+    page: int,
+    page_size: int,
+    keywords: str | None = None,
+    lab_id: int | None = None,
+):
+    """分页模糊查询列表"""
+
+    # select * from equipment where name like '%计算机%';
+    query = db.query(Equipment)
+    if lab_id is not None:
+        query = query.filter(Equipment.lab_id == lab_id)
+    if keywords:
+        query = query.filter(Equipment.name.ilike(f"%{keywords}%"))
+    total = query.count()
+    items = (
+        query.order_by(Equipment.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    result = []
+    for item in items:
+        data = EquipmentResponse.model_validate(item)
+        data.lab_name = item.lab.name if item.lab else None
+        result.append(data)
+    return PageResponse(list=result, total=total)
+
+
+def create_equipment(db: Session, data: EquipmentCreateRequest):
+    """新增"""
+    lab = db.query(Lab).filter(Lab.id == data.lab_id).first()
+    if not lab:
+        raise BusinessException(message="实验室不存在")
+
+    exist = (
+        db.query(Equipment)
+        .filter(Equipment.lab_id == data.lab_id, Equipment.name == data.name)
+        .first()
+    )
+    if exist:
+        raise BusinessException(message="同一个实验室不能存在同名的设备")
+    equipment = Equipment(**data.model_dump())
+    db.add(equipment)
+    db.commit()
+    db.refresh(equipment)
+    res = EquipmentResponse.model_validate(equipment)
+    res.lab_name = equipment.lab.name if equipment.lab else None
+    return res
+
+
+def update_equipment(db: Session, equipment_id: int, data: EquipmentUpdateRequest):
+    """更新"""
+    equipment = db.query(Equipment).filter(Equipment.id == equipment_id).first()
+    if not equipment:
+        raise BusinessException(message="实验室设备不存在")
+
+    payload = data.model_dump(exclude_none=True)
+    lab_id = payload.get("lab_id", equipment.lab_id)
+    name = payload.get("name", equipment.name)
+    lab = db.query(Lab).filter(Lab.id == lab_id).first()
+    if not lab:
+        raise BusinessException(message="实验室不存在")
+
+    exist = (
+        db.query(Equipment)
+        .filter(
+            Equipment.lab_id == lab_id,
+            Equipment.name == name,
+            Equipment.id != equipment.id,
+        )
+        .first()
+    )
+
+    if exist:
+        raise BusinessException(message="同一个实验室不能存在同名的设备")
+
+    for field, value in payload.items():
+        setattr(equipment, field, value)
+
+    db.commit()
+    db.refresh(equipment)
+
+    res = EquipmentResponse.model_validate(equipment)
+    res.lab_name = equipment.lab.name if equipment.lab else None
+    return res
+
+
+def delete_equipment(db: Session, equipment_id: int):
+    """删除"""
+    equipment = db.query(Equipment).filter(Equipment.id == equipment_id).first()
+    if not equipment:
+        raise BusinessException(message="实验室设备不存在")
+    if (
+        db.query(Reservation.id)
+        .filter(Reservation.equipment_id == equipment_id)
+        .first()
+    ):
+        raise BusinessException(message="该设备存在预约记录，不能删除", code=409)
+
+    try:
+        db.delete(equipment)
+        db.commit()
+    except IntegrityError as exc:
+        # 检查后仍可能新增关联记录，提交失败时回滚并返回业务提示。
+        db.rollback()
+        raise BusinessException(
+            message="该设备存在关联数据，无法删除", code=409
+        ) from exc
+```
+
+</details>
+
+<details>
+<summary><code>backend/app/utils/jwt.py</code></summary>
+
+```python
+from datetime import datetime, timedelta, timezone
+import jwt
+from app.config import settings
+
+
+def create_access_token(user_id: int) -> str:
+    """
+    Create a JWT access token.
+
+    :param data: The data to encode in the token (usually user information).
+    :param secret_key: The secret key used to sign the token.
+    :param algorithm: The algorithm used for encoding (default is HS256).
+    :return: A JWT access token as a string.
+    """
+    expire = datetime.now(timezone.utc) + timedelta(hours=settings.JWT_EXPIRE_HOURS)
+
+    payload = {"user_id": user_id, "exp": expire}
+
+    return jwt.encode(
+        payload,
+        settings.JWT_SECRET_KEY,
+        algorithm=settings.JWT_ALGORITHM,
+    )
+
+
+def decode_access_token(token: str) -> dict:
+    """
+    Decode a JWT access token.
+
+    :param token: The JWT access token to decode.
+    :param secret_key: The secret key used to sign the token.
+    :param algorithms: A list of algorithms to use for decoding (default is HS256).
+    :return: The decoded payload as a dictionary.
+    """
+    try:
+        payload = jwt.decode(
+            token,
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM],
+        )
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise ValueError("Token has expired")
+    except jwt.InvalidTokenError:
+        raise ValueError("Invalid token")
+```
+
+</details>
+
+<details>
+<summary><code>backend/app/migrations/add_username_unique.py</code></summary>
+
+```python
+"""运行方式：在 backend 目录执行 python -m app.migrations.add_username_unique。"""
+
+from sqlalchemy import Index, MetaData, Table, func, inspect, select
+from sqlalchemy.engine import Connection
+
+from app.database import engine
+
+
+def upgrade(connection: Connection) -> bool:
+    """为已有 users 表添加唯一索引；有重复账号时停止，不改动账号数据。"""
+    inspector = inspect(connection)
+    unique_keys = inspector.get_unique_constraints("users") + inspector.get_indexes(
+        "users"
+    )
+    if any(
+        key.get("column_names") == ["username"] and key.get("unique", True)
+        for key in unique_keys
+    ):
+        return False
+
+    users = Table("users", MetaData(), autoload_with=connection)
+    duplicate = connection.execute(
+        select(users.c.username)
+        .group_by(users.c.username)
+        .having(func.count() > 1)
+        .limit(1)
+    ).first()
+    if duplicate:
+        raise RuntimeError(
+            "users 表存在重复账号，请先核实账号及其预约归属，处理重复数据后重试；"
+            "本脚本不会自动删除或合并账号。"
+        )
+
+    Index("uq_users_username", users.c.username, unique=True).create(connection)
+    return True
+
+
+if __name__ == "__main__":
+    with engine.begin() as connection:
+        changed = upgrade(connection)
+    print("用户名唯一索引已创建" if changed else "用户名唯一约束已存在，无需修改")
+```
+
+</details>
+
+<details>
+<summary><code>frontend/src/utils/auth.js</code></summary>
+
+```js
+// 存储token、用户信息, 获取token、用户信息, 删除token、用户信息
+const TOKEN_KEY = 'token'
+const USER_KEY = 'userInfo'
+let authVersion = 0
+
+export function getAuthVersion() {
+  return authVersion
+}
+
+export function getToken() {
+  return localStorage.getItem(TOKEN_KEY)
+}
+
+export function setToken(token) {
+  localStorage.setItem(TOKEN_KEY, token)
+  authVersion++
+}
+
+export function removeToken() {
+  localStorage.removeItem(TOKEN_KEY)
+  authVersion++
+}
+
+export function getUserInfo() {
+  const str = localStorage.getItem(USER_KEY)
+  if (!str) return null
+
+  try {
+    return JSON.parse(str)
+  } catch {
+    localStorage.removeItem(USER_KEY)
+    return null
+  }
+}
+
+export function setUserInfo(userInfo) {
+  localStorage.setItem(USER_KEY, JSON.stringify(userInfo))
+}
+
+export function removeUserInfo() {
+  localStorage.removeItem(USER_KEY)
+}
+
+// 登出
+export function logout() {
+  removeToken()
+  removeUserInfo()
+}
+```
+
+</details>
+
+<details>
+<summary><code>frontend/src/utils/request.js</code></summary>
+
+```js
+import axios from 'axios'
+import { getAuthVersion, getToken, logout } from './auth'
+import router from '@/router'
+import { ElMessage } from 'element-plus'
+
+const service = axios.create({
+  baseURL: import.meta.env.VITE_API_BASE_URL,
+  timeout: 30000 // 30s
+})
+
+const handleUnauthorized = (config, message) => {
+  // 旧会话的请求失败，不能使重新登录后的会话失效。
+  if (config?._authVersion !== getAuthVersion()) return
+  const token = getToken()
+  if (token && config.headers?.Authorization !== `Bearer ${token}`) return
+  ElMessage.error(message)
+  if (token) {
+    logout()
+    router.replace('/login')
+  }
+}
+
+// 请求的拦截器的配置
+service.interceptors.request.use(
+  (config) => {
+    const token = getToken()
+    config._authVersion = getAuthVersion()
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+  },
+  (err) => Promise.reject(err)
+)
+
+// 返回的拦截器配置
+service.interceptors.response.use(
+  (res) => {
+    const data = res.data
+    console.log('response:', res)
+    if (data.code === 401) {
+      handleUnauthorized(res.config, data.message || '登录已过期，请重新登录')
+      return Promise.reject(data)
+    }
+    if (data.code !== 200) {
+      ElMessage.error(data.message || '请求失败')
+    }
+    return data
+  },
+  (err) => {
+    if (err.response) {
+      const httpStatusCode = err.response.status
+      if (httpStatusCode === 401) {
+        handleUnauthorized(err.config, err.response.data?.message || '登录已过期，请重新登录')
+      } else {
+        ElMessage.error(err.response.data?.message || '请求失败')
+      }
+    } else {
+      ElMessage.error('网络异常，请检查后端服务')
+    }
+    return Promise.reject(err)
+  }
+)
+
+export default service
+```
+
+</details>
+
+<details>
+<summary><code>frontend/src/views/Login.vue</code></summary>
+
+```vue
+<template>
+  <div class="login-container">
+    <div class="login-box">
+      <h1 style="font-size: 28px">实验室预约系统</h1>
+      <div style="margin-top: 5px; margin-bottom: 30px">基于Agent智能预约系统</div>
+      <el-form
+        ref="formRef"
+        :rules="rules"
+        :model="form"
+        label-width="0px"
+        style="width: 100%"
+        @submit.prevent="login"
+      >
+        <el-form-item prop="username">
+          <el-input
+            size="large"
+            v-model="form.username"
+            placeholder="请输入账号"
+            :prefix-icon="User"
+          />
+        </el-form-item>
+        <el-form-item prop="password">
+          <el-input
+            type="password"
+            size="large"
+            v-model="form.password"
+            placeholder="请输入密码"
+            :prefix-icon="Lock"
+            show-password
+          />
+        </el-form-item>
+        <div>
+          <el-button
+            type="primary"
+            size="large"
+            style="width: 100%"
+            native-type="submit"
+            :loading="loadingValue"
+            >登 录</el-button
+          >
+          <div style="text-align: right; margin-top: 20px; padding-right: 15px">
+            还没有账号？请<router-link style="color: var(--el-color-primary)" to="/register"
+              >注册</router-link
+            >
+          </div>
+        </div>
+      </el-form>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { reactive, ref } from 'vue'
+import { User, Lock } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import router from '@/router'
+import { loginApi } from '@/api/auth'
+import { useUser } from '@/utils/user'
+const { saveLoginData } = useUser()
+
+const formRef = ref()
+
+const rules = {
+  username: [
+    { required: true, message: '请输入账号', trigger: 'blur' }
+    // { min: 3, max: 20, message: '账号长度在3到20个字符之间', trigger: 'blur' }
+  ],
+  password: [
+    { required: true, message: '请输入密码', trigger: 'blur' }
+    // { min: 6, max: 20, message: '密码长度在6到20个字符之间', trigger: 'blur' }
+  ]
+}
+
+const form = reactive({
+  username: '',
+  password: ''
+})
+
+const loadingValue = ref(false)
+
+const login = async () => {
+  if (loadingValue.value) return
+  loadingValue.value = true
+  try {
+    const valid = await formRef.value.validate().catch(() => false)
+    if (!valid) return
+    const res = await loginApi(form)
+    if (res.code === 200) {
+      saveLoginData(res.data)
+      try {
+        const failure = await router.replace('/manager/home')
+        if (router.currentRoute.value.path === '/manager/home') {
+          ElMessage.success('登录成功')
+        } else {
+          console.error('登录后跳转首页未完成:', failure)
+          ElMessage.error('首页跳转未完成，请重试')
+        }
+      } catch (error) {
+        console.error('登录后加载首页失败:', error)
+        ElMessage.error('首页加载失败，请刷新页面后重试')
+      }
+    }
+  } catch {
+    // 登录请求失败时由请求拦截器提示错误。
+  } finally {
+    loadingValue.value = false
+  }
+}
+</script>
+
+<style scoped>
+.login-container {
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.login-box {
+  width: 380px;
+  border-radius: 8px;
+  box-shadow: 0 8px 12px rgba(0, 0, 0, 0.1);
+  padding: 30px;
+  text-align: center;
+}
+</style>
+```
+
+</details>
+
+<details>
+<summary><code>frontend/src/views/Equipment.vue</code></summary>
+
+```vue
+<template>
+  <div style="width: 50%">
+    <el-card>
+      <template #header>
+        <div style="font-size: 16px; font-weight: bold">
+          <span>设备管理</span>
+        </div>
+      </template>
+      <div style="margin-bottom: 10px">
+        <el-select
+          v-model="params.lab_id"
+          placeholder="所属实验室"
+          clearable
+          style="width: 200px; margin-right: 8px"
+          @change="handleSearch"
+        >
+          <el-option
+            v-for="item in labOptions"
+            :key="item.id"
+            :label="item.name"
+            :value="item.id"
+          />
+        </el-select>
+
+        <el-input
+          placeholder="请输入设备名称或型号"
+          v-model="params.keywords"
+          style="width: 240px; margin-right: 8px"
+          clearable
+          @keyup.enter="handleSearch"
+          @clear="handleSearch"
+        ></el-input>
+
+        <el-button type="primary" :icon="Search" @click="handleSearch">查询</el-button>
+        <el-button type="success" :icon="Plus" @click="handleCreate">新增</el-button>
+      </div>
+      <el-table
+        :header-cell-style="{ backgroundColor: '#fdf', color: '#333' }"
+        :data="tableData"
+        style="width: 100%"
+        v-loading="loading"
+      >
+        <el-table-column prop="img" label="图片" width="90">
+          <template #default="{ row }">
+            <div style="min-height: 50px">
+              <img
+                v-if="row.img"
+                style="display: block; width: 50px; height: 50px; border-radius: 6px"
+                :src="row.img"
+                alt=""
+              />
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column prop="lab_name" label="所属实验室" />
+        <el-table-column prop="name" label="设备名称" />
+
+        <el-table-column prop="spec" label="型号规格" />
+        <el-table-column prop="quantity" label="数量" width="80" />
+        <el-table-column prop="status" label="状态" width="90">
+          <template #default="{ row }">
+            <el-tag :type="row.status === 1 ? 'success' : 'danger'">
+              {{ row.status === 1 ? '正常' : '维修' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="180">
+          <template #default="{ row }">
+            <el-button type="primary" text bg @click="handleEdit(row)">编辑</el-button>
+            <el-button type="danger" text bg @click="handleDelete(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div style="margin-top: 10px; display: flex; justify-content: flex-end">
+        <el-pagination
+          v-model:current-page="params.page"
+          v-model:page-size="params.page_size"
+          :total="total"
+          background
+          layout="total, prev, pager, next"
+          @current-change="load"
+        />
+      </div>
+      <el-dialog v-model="dialogVisible" :title="form.id ? '编辑' : '新增'" width="450">
+        <el-form
+          id="user-form"
+          ref="formRef"
+          :rules="rules"
+          :model="form"
+          label-width="80px"
+          style="width: 100%; padding-right: 30px; padding-top: 16px"
+          v-loading="formLoading"
+          @submit.prevent="handleSave"
+        >
+          <el-form-item label="所属实验室" prop="lab_id">
+            <el-select v-model="form.lab_id" placeholder="请选择实验室" style="width: 100%">
+              <el-option
+                v-for="item in labOptions"
+                :key="item.id"
+                :label="item.name"
+                :value="item.id"
+              />
+            </el-select>
+          </el-form-item>
+
+          <el-form-item label="设备名称" prop="name">
+            <el-input v-model="form.name" placeholder="请输入设备名称" />
+          </el-form-item>
+
+          <el-form-item label="说明">
+            <el-input
+              v-model="form.description"
+              type="textarea"
+              :rows="3"
+              placeholder="请输入说明"
+            />
+          </el-form-item>
+
+          <el-form-item label="图片">
+            <el-upload
+              class="avatar-uploader"
+              :http-request="handleFileUpload"
+              :show-file-list="false"
+              accept="image/jpeg,image/png,image/gif,image/webp"
+              :before-upload="beforeAvatarUpload"
+            >
+              <img v-if="form.img" :src="form.img" class="avatar" />
+              <el-icon v-else class="avatar-uploader-icon"><Plus /></el-icon>
+            </el-upload>
+          </el-form-item>
+
+          <el-form-item label="型号规格">
+            <el-input v-model="form.spec" placeholder="例如 RTX4090 24G" />
+          </el-form-item>
+
+          <el-form-item label="数量" prop="quantity">
+            <el-input-number v-model="form.quantity" :min="1" :max="999" />
+          </el-form-item>
+
+          <el-form-item label="状态">
+            <el-radio-group v-model="form.status">
+              <el-radio :value="1">正常</el-radio>
+              <el-radio :value="0">维修</el-radio>
+            </el-radio-group>
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button type="primary" native-type="submit" form="user-form" :loading="formLoading">
+            确定
+          </el-button>
+          <el-button :disabled="formLoading" @click="dialogVisible = false">取消</el-button>
+        </template>
+      </el-dialog>
+    </el-card>
+  </div>
+</template>
+
+<script setup>
+import { ref, reactive, computed, onMounted, nextTick } from 'vue'
+import {
+  getEquipmentPageList,
+  createEquipmentApi,
+  updateEquipmentApi,
+  deleteEquipmentApi
+} from '@/api/equipment'
+import { getLabPageList } from '@/api/lab'
+import { Search, Plus } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { uploadFileApi } from '@/api/files'
+
+const params = reactive({
+  page: 1,
+  page_size: 10,
+  keywords: '',
+  lab_id: null
+})
+
+const loading = ref(false)
+const tableData = ref([])
+const total = ref(0)
+const labOptions = ref([])
+const dialogVisible = ref(false)
+const formRef = ref()
+const formLoading = ref(false)
+const form = reactive({
+  id: null,
+  lab_id: null,
+  name: '',
+  description: '',
+  img: '',
+  spec: '',
+  quantity: 1,
+  status: 1
+})
+
+// 加载分页数据
+const load = async () => {
+  loading.value = true
+  try {
+    const res = await getEquipmentPageList(params)
+    if (res.code === 200) {
+      tableData.value = res.data?.list
+      total.value = res.data?.total
+    }
+  } finally {
+    loading.value = false
+  }
+}
+
+const rules = {
+  lab_id: [{ required: true, message: '请选择实验室', trigger: 'change' }],
+  name: [{ required: true, message: '请输入设备名称', trigger: 'blur' }],
+  quantity: [{ required: true, message: '请输入数量', trigger: 'blur' }]
+}
+
+const resetForm = () => {
+  Object.assign(form, {
+    id: null,
+    lab_id: null,
+    name: '',
+    description: '',
+    img: '',
+    spec: '',
+    quantity: 1,
+    status: 1
+  })
+}
+
+const handleSearch = () => {
+  params.page = 1
+  load()
+}
+
+const handleCreate = async () => {
+  resetForm()
+  dialogVisible.value = true
+  await nextTick()
+  formRef.value?.clearValidate()
+}
+
+// 编辑信息
+const handleEdit = (row) => {
+  resetForm()
+  Object.assign(form, {
+    id: row.id,
+    lab_id: row.lab_id,
+    name: row.name,
+    description: row.description,
+    img: row.img,
+    spec: row.spec,
+    quantity: row.quantity,
+    status: row.status
+  })
+  dialogVisible.value = true
+}
+
+// 删除信息
+const handleDelete = async (row) => {
+  try {
+    await ElMessageBox.confirm(`确认删除【${row.name}】？`, '确认删除', { type: 'warning' })
+    const res = await deleteEquipmentApi(row.id)
+    if (res.code === 200) {
+      ElMessage.success('删除成功')
+      await load()
+    }
+  } catch {
+    // 取消或关闭确认框无需处理，请求失败时由请求拦截器提示错误。
+  }
+}
+
+// 保存信息
+const handleSave = async () => {
+  if (formLoading.value || !formRef.value) return
+  formLoading.value = true
+  try {
+    const valid = await formRef.value.validate().catch(() => false)
+    if (!valid) return
+    const { id, ...equipmentData } = form
+    const res = id
+      ? await updateEquipmentApi(id, equipmentData)
+      : await createEquipmentApi(equipmentData)
+    if (res.code === 200) {
+      dialogVisible.value = false
+      ElMessage.success('操作成功')
+      await load()
+    }
+  } catch {
+    // 请求失败时由请求拦截器提示错误，保留表单以便重试。
+  } finally {
+    formLoading.value = false
+  }
+}
+
+const beforeAvatarUpload = (file) => {
+  const imageTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+
+  if (!imageTypes.includes(file.type)) {
+    ElMessage.error('只能上传图片')
+    return false
+  }
+
+  if (file.size / 1024 / 1024 > 2) {
+    ElMessage.error('上传图片大小不能超过2M')
+    return false
+  }
+
+  return true
+}
+
+const handleFileUpload = async ({ file }) => {
+  try {
+    const res = await uploadFileApi(file)
+    if (res.code === 200) {
+      form.img = res.data?.url
+    }
+  } catch {}
+}
+
+const loadLabs = async () => {
+  const res = await getLabPageList({ page: 1, page_size: 100 })
+  if (res.code === 200) {
+    labOptions.value = res.data?.list
+  }
+}
+
+onMounted(() => {
+  loadLabs()
+  load()
+})
+</script>
+
+<style scoped>
+.avatar-uploader .avatar {
+  width: 130px;
+  height: 130px;
+  display: block;
+}
+</style>
+<style>
+.avatar-uploader .el-upload {
+  border: 1px dashed var(--el-border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: var(--el-transition-duration-fast);
+}
+.avatar-uploader .el-upload:hover {
+  border-color: var(--el-color-primary);
+}
+.el-icon.avatar-uploader-icon {
+  font-size: 28px;
+  color: #8c939d;
+  width: 130px;
+  height: 130px;
+  text-align: center;
+}
+</style>
+```
+
+</details>
+
+<details>
+<summary><code>frontend/src/views/Lab.vue</code></summary>
+
+```vue
+<template>
+  <div style="width: 50%">
+    <el-card>
+      <template #header>
+        <div style="font-size: 16px; font-weight: bold">
+          <span>实验室管理</span>
+        </div>
+      </template>
+      <div style="margin-bottom: 10px">
+        <el-input
+          placeholder="请输入账号或名称查询"
+          v-model="params.keywords"
+          style="width: 240px; margin-right: 8px"
+          clearable
+          @keyup.enter="handleSearch"
+          @clear="handleSearch"
+        ></el-input>
+        <el-button type="primary" :icon="Search" @click="handleSearch">查询</el-button>
+        <el-button type="primary" :icon="Plus" @click="handleCreate">新增</el-button>
+      </div>
+      <el-table
+        :header-cell-style="{ backgroundColor: '#fdf', color: '#333' }"
+        :data="tableData"
+        style="width: 100%"
+        v-loading="loading"
+      >
+        <el-table-column prop="img" label="封面" width="100">
+          <template #default="{ row }">
+            <div style="min-height: 50px">
+              <img
+                v-if="row.img"
+                style="display: block; width: 50px; height: 50px; border-radius: 50%"
+                :src="row.img"
+                alt=""
+              />
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column prop="name" label="名称" width="140" />
+        <el-table-column prop="description" label="简介" width="140" />
+        <el-table-column prop="location" label="位置" width="200" />
+        <el-table-column label="开放时间">
+          <template #default="{ row }">{{ row.open_time }} - {{ row.close_time }}</template>
+        </el-table-column>
+        <el-table-column prop="status" label="状态" width="100">
+          <template #default="{ row }">
+            <el-tag :type="row.status ? 'success' : 'danger'">
+              {{ row.status ? '开启' : '关闭' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="180">
+          <template #default="{ row }">
+            <el-button type="primary" text bg @click="handleEdit(row)">编辑</el-button>
+            <el-button type="danger" text bg @click="handleDelete(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div style="margin-top: 10px; display: flex; justify-content: flex-end">
+        <el-pagination
+          v-model:current-page="params.page"
+          v-model:page-size="params.pageSize"
+          :total="total"
+          background
+          layout="total, prev, pager, next"
+          @current-change="load"
+        />
+      </div>
+      <el-dialog v-model="dialogVisible" :title="form.id ? '编辑' : '新增'" width="450">
+        <el-form
+          id="user-form"
+          ref="formRef"
+          :rules="rules"
+          :model="form"
+          label-width="80px"
+          style="width: 100%; padding-right: 30px; padding-top: 16px"
+          v-loading="formLoading"
+          @submit.prevent="handleSave"
+        >
+          <el-form-item label="名称" prop="name">
+            <el-input v-model="form.name" placeholder="请输入名称" />
+          </el-form-item>
+
+          <el-form-item label="简介">
+            <el-input type="textarea" v-model="form.description" placeholder="请输入简介" />
+          </el-form-item>
+
+          <el-form-item label="封面">
+            <el-upload
+              class="avatar-uploader"
+              :http-request="handleFileUpload"
+              :show-file-list="false"
+              accept="image/jpeg,image/png,image/gif,image/webp"
+              :before-upload="beforeAvatarUpload"
+            >
+              <img v-if="form.img" :src="form.img" class="avatar" />
+              <el-icon v-else class="avatar-uploader-icon"><Plus /></el-icon>
+            </el-upload>
+          </el-form-item>
+          <el-form-item label="位置">
+            <el-input type="textarea" v-model="form.location" placeholder="请输入位置" />
+          </el-form-item>
+          <el-form-item label="容量" prop="capacity">
+            <el-input-number v-model="form.capacity" :min="1" :precision="0" placeholder="请输入容量" />
+          </el-form-item>
+          <el-form-item label="开放时间">
+            <el-time-picker
+              v-model="form.open_time"
+              format="HH:mm"
+              value-format="HH:mm"
+              placeholder="开始时间"
+              style="width: 140px; margin-right: 8px"
+            />
+            <el-time-picker
+              v-model="form.close_time"
+              format="HH:mm"
+              value-format="HH:mm"
+              placeholder="结束时间"
+              style="width: 140px"
+            />
+          </el-form-item>
+          <el-form-item label="状态" prop="status" for="">
+            <el-radio-group v-model="form.status">
+              <el-radio :value="true">正常</el-radio>
+              <el-radio :value="false">禁用</el-radio>
+            </el-radio-group>
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button type="primary" native-type="submit" form="user-form" :loading="formLoading">
+            确定
+          </el-button>
+          <el-button :disabled="formLoading" @click="dialogVisible = false">取消</el-button>
+        </template>
+      </el-dialog>
+    </el-card>
+  </div>
+</template>
+
+<script setup>
+import { ref, reactive, computed, onMounted, nextTick } from 'vue'
+import { getLabPageList, createLabApi, updateLabApi, deleteLabApi } from '@/api/lab'
+import { Search, Plus } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { uploadFileApi } from '@/api/files'
+
+const params = reactive({
+  page: 1,
+  pageSize: 10,
+  keywords: ''
+})
+
+// 加载分页数据
+const loading = ref(false)
+const tableData = ref([])
+const total = ref(0)
+const dialogVisible = ref(false)
+const formRef = ref()
+const formLoading = ref(false)
+const form = reactive({
+  id: null,
+  name: '',
+  description: '',
+  img: '',
+  location: '',
+  capacity: 1,
+  open_time: '',
+  close_time: '',
+  status: true
+})
+
+const load = async () => {
+  loading.value = true
+  try {
+    const res = await getLabPageList({
+      page: params.page,
+      page_size: params.pageSize,
+      keywords: params.keywords
+    })
+    if (res.code === 200) {
+      tableData.value = res.data?.list
+      total.value = res.data?.total
+    }
+  } finally {
+    loading.value = false
+  }
+}
+
+const rules = computed(() => ({
+  name: [{ required: true, message: '请输入实验室名称', trigger: 'blur' }],
+  capacity: [
+    { required: true, message: '请输入容量', trigger: 'blur' },
+    { type: 'integer', min: 1, message: '容量必须为正整数', trigger: 'change' }
+  ]
+}))
+
+const resetForm = () => {
+  Object.assign(form, {
+    id: null,
+    name: '',
+    description: '',
+    img: '',
+    location: '',
+    capacity: 20,
+    open_time: '08:30',
+    close_time: '20:30',
+    status: true
+  })
+}
+
+const handleSearch = async () => {
+  params.page = 1
+  load()
+}
+
+const handleCreate = async () => {
+  resetForm()
+  dialogVisible.value = true
+  await nextTick()
+  formRef.value?.clearValidate()
+}
+
+// 编辑信息
+const handleEdit = async (row) => {
+  resetForm()
+  Object.assign(form, {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    img: row.img,
+    location: row.location,
+    capacity: row.capacity,
+    open_time: row.open_time,
+    close_time: row.close_time,
+    status: row.status
+  })
+  dialogVisible.value = true
+  await nextTick()
+  formRef.value?.clearValidate()
+}
+
+// 删除信息
+const handleDelete = async (row) => {
+  try {
+    await ElMessageBox.confirm(`确认删除【${row.name}】？`, '确认删除', { type: 'warning' })
+    const res = await deleteLabApi(row.id)
+    if (res.code === 200) {
+      ElMessage.success('删除成功')
+      await load()
+    }
+  } catch {
+    // 取消或关闭确认框无需处理，请求失败时由请求拦截器提示错误。
+  }
+}
+
+// 保存信息
+const handleSave = async () => {
+  if (formLoading.value || !formRef.value) return
+  formLoading.value = true
+  try {
+    const valid = await formRef.value.validate().catch(() => false)
+    if (!valid) return
+    const { id, ...labData } = form
+    const res = id ? await updateLabApi(id, labData) : await createLabApi(labData)
+    if (res.code === 200) {
+      dialogVisible.value = false
+      ElMessage.success('操作成功')
+      await load()
+    }
+  } catch {
+    // 请求失败时由请求拦截器提示错误，保留表单以便重试。
+  } finally {
+    formLoading.value = false
+  }
+}
+
+onMounted(() => {
+  load()
+})
+
+const beforeAvatarUpload = (file) => {
+  const imageTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+
+  if (!imageTypes.includes(file.type)) {
+    ElMessage.error('只能上传图片')
+    return false
+  }
+
+  if (file.size / 1024 / 1024 > 2) {
+    ElMessage.error('上传图片大小不能超过2M')
+    return false
+  }
+
+  return true
+}
+
+const handleFileUpload = async ({ file }) => {
+  try {
+    const res = await uploadFileApi(file)
+    if (res.code === 200) {
+      form.img = res.data?.url
+    }
+  } catch {}
+}
+</script>
+
+<style scoped>
+.avatar-uploader .avatar {
+  width: 130px;
+  height: 130px;
+  display: block;
+}
+</style>
+<style>
+.avatar-uploader .el-upload {
+  border: 1px dashed var(--el-border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: var(--el-transition-duration-fast);
+}
+.avatar-uploader .el-upload:hover {
+  border-color: var(--el-color-primary);
+}
+.el-icon.avatar-uploader-icon {
+  font-size: 28px;
+  color: #8c939d;
+  width: 130px;
+  height: 130px;
+  text-align: center;
+}
+</style>
+```
+
+</details>
+
+<details>
+<summary><code>frontend/src/views/User.vue</code></summary>
+
+```vue
+<template>
+  <div style="width: 50%">
+    <el-card>
+      <template #header>
+        <div style="font-size: 16px; font-weight: bold">
+          <span>用户管理</span>
+        </div>
+      </template>
+      <div style="margin-bottom: 10px">
+        <el-input
+          placeholder="请输入账号或名称查询"
+          v-model="params.keywords"
+          style="width: 240px; margin-right: 8px"
+          clearable
+          @keyup.enter="handleSearch"
+          @clear="handleSearch"
+        ></el-input>
+        <el-button type="primary" :icon="Search" @click="handleSearch">查询</el-button>
+        <el-button type="primary" :icon="Plus" @click="handleCreate">新增</el-button>
+      </div>
+      <el-table
+        :header-cell-style="{ backgroundColor: '#fdf', color: '#333' }"
+        :data="tableData"
+        style="width: 100%"
+        v-loading="loading"
+      >
+        <el-table-column prop="avatar" label="头像" width="100">
+          <template #default="{ row }">
+            <div style="min-height: 50px">
+              <img
+                v-if="row.avatar"
+                style="display: block; width: 50px; height: 50px; border-radius: 50%"
+                :src="row.avatar"
+                alt=""
+              />
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column prop="username" label="账号" width="140" />
+        <el-table-column prop="name" label="名称" width="140" />
+        <el-table-column prop="phone" label="手机号" width="160" />
+        <el-table-column prop="email" label="邮箱" width="200" />
+        <el-table-column prop="role" label="角色" width="100">
+          <template #default="{ row }">
+            {{ row.role === 'admin' ? '管理员' : '学生' }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="status" label="状态" width="100">
+          <template #default="{ row }">
+            <el-tag :type="row.status ? 'success' : 'danger'">
+              {{ row.status ? '正常' : '禁用' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="180">
+          <template #default="{ row }">
+            <el-button type="primary" text bg @click="handleEdit(row)">编辑</el-button>
+            <el-button type="danger" text bg @click="handleDelete(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div style="margin-top: 10px; display: flex; justify-content: flex-end">
+        <el-pagination
+          v-model:current-page="params.page"
+          v-model:page-size="params.pageSize"
+          :total="total"
+          background
+          layout="total, prev, pager, next"
+          @current-change="load"
+        />
+      </div>
+      <el-dialog v-model="dialogVisible" :title="form.id ? '编辑' : '新增'" width="450">
+        <el-form
+          id="user-form"
+          ref="formRef"
+          :rules="rules"
+          :model="form"
+          label-width="80px"
+          style="width: 100%; padding-right: 30px; padding-top: 16px"
+          v-loading="formLoading"
+          @submit.prevent="handleSave"
+        >
+          <el-form-item label="账号" prop="username" for="user-form-username">
+            <el-input
+              id="user-form-username"
+              :disabled="!!form.id"
+              v-model="form.username"
+              placeholder="请输入账号"
+            />
+          </el-form-item>
+
+          <el-form-item v-if="!form.id" label="密码" prop="password" for="user-form-password">
+            <el-input
+              id="user-form-password"
+              type="password"
+              show-password
+              v-model="form.password"
+              placeholder="请输入密码"
+            />
+          </el-form-item>
+
+          <el-form-item label="名称" prop="name" for="user-form-name">
+            <el-input id="user-form-name" v-model="form.name" placeholder="请输入名称" />
+          </el-form-item>
+
+          <el-form-item label="角色" prop="role" for="user-form-role">
+            <el-select id="user-form-role" v-model="form.role">
+              <el-option label="学生" value="student"></el-option>
+              <el-option label="管理员" value="admin"></el-option>
+            </el-select>
+          </el-form-item>
+          <el-form-item label="邮箱" prop="email" for="user-form-email">
+            <el-input id="user-form-email" v-model="form.email" placeholder="请输入邮箱" />
+          </el-form-item>
+
+          <el-form-item label="手机号" prop="phone" for="user-form-phone">
+            <el-input id="user-form-phone" v-model="form.phone" placeholder="请输入手机号" />
+          </el-form-item>
+          <!-- 状态是控件组，使用组件的 aria-labelledby 关联组标签。 -->
+          <el-form-item label="状态" prop="status" for="">
+            <el-radio-group v-model="form.status">
+              <el-radio :value="1">正常</el-radio>
+              <el-radio :value="0">禁用</el-radio>
+            </el-radio-group>
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button type="primary" native-type="submit" form="user-form" :loading="formLoading">
+            确定
+          </el-button>
+          <el-button :disabled="formLoading" @click="dialogVisible = false">取消</el-button>
+        </template>
+      </el-dialog>
+    </el-card>
+  </div>
+</template>
+
+<script setup>
+import { ref, reactive, computed, onMounted, nextTick } from 'vue'
+import { getUserPageList, createUserApi, updateUserApi, deleteUserApi } from '@/api/user'
+import { Search, Plus } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+const params = reactive({
+  page: 1,
+  pageSize: 10,
+  keywords: ''
+})
+
+// 加载分页数据
+const loading = ref(false)
+const tableData = ref([])
+const total = ref(0)
+const dialogVisible = ref(false)
+const formRef = ref()
+const formLoading = ref(false)
+const form = reactive({
+  id: null,
+  username: '',
+  password: '',
+  name: '',
+  role: '',
+  email: '',
+  phone: '',
+  avatar: '',
+  status: 1
+})
+
+const load = async () => {
+  loading.value = true
+  try {
+    const res = await getUserPageList({
+      page: params.page,
+      page_size: params.pageSize,
+      keywords: params.keywords
+    })
+    if (res.code === 200) {
+      tableData.value = res.data?.list
+      total.value = res.data?.total
+    }
+  } finally {
+    loading.value = false
+  }
+}
+
+const rules = computed(() => ({
+  username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
+  password: form.id ? [] : [
+    { required: true, message: '请输入密码', trigger: 'blur' },
+    { min: 3, max: 10, message: '密码是3-10位', trigger: 'blur' }
+  ],
+  name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
+  email: [{ type: 'email', message: '邮箱格式错误', trigger: 'blur' }],
+  phone: [{ pattern: /^1[3-9]\d{9}$/, message: '手机号格式错误', trigger: 'blur' }]
+}))
+
+const resetForm = () => {
+  Object.assign(form, {
+    id: null,
+    username: '',
+    password: '',
+    name: '',
+    role: 'student',
+    email: '',
+    phone: '',
+    avatar: '',
+    status: 1
+  })
+}
+
+const handleSearch = async () => {
+  params.page = 1
+  load()
+}
+
+const handleCreate = async () => {
+  resetForm()
+  dialogVisible.value = true
+  await nextTick()
+  formRef.value?.clearValidate()
+}
+
+// 编辑用户信息
+const handleEdit = async (row) => {
+  resetForm()
+  Object.assign(form, {
+    id: row.id,
+    username: row.username,
+    name: row.name,
+    role: row.role,
+    email: row.email,
+    phone: row.phone,
+    avatar: row.avatar,
+    status: row.status
+  })
+  dialogVisible.value = true
+  await nextTick()
+  formRef.value?.clearValidate()
+}
+
+// 删除用户信息
+const handleDelete = async (row) => {
+  try {
+    await ElMessageBox.confirm(`确认删除用户【${row.username}】？`, '确认删除', { type: 'warning' })
+    const res = await deleteUserApi(row.id)
+    if (res.code === 200) {
+      ElMessage.success('删除用户成功')
+      await load()
+    }
+  } catch {
+    // 取消或关闭确认框无需处理，请求失败时由请求拦截器提示错误。
+  }
+}
+
+// 保存用户信息
+const handleSave = async () => {
+  if (formLoading.value || !formRef.value) return
+  formLoading.value = true
+  try {
+    const valid = await formRef.value.validate().catch(() => false)
+    if (!valid) return
+    const { id, username, password, ...userData } = form
+    const res = id
+      ? await updateUserApi(id, userData)
+      : await createUserApi({ username, password, ...userData })
+    if (res.code === 200) {
+      dialogVisible.value = false
+      ElMessage.success('操作成功')
+      await load()
+    }
+  } catch {
+    // 请求失败时由请求拦截器提示错误，保留表单以便重试。
+  } finally {
+    formLoading.value = false
+  }
+}
+
+onMounted(() => {
+  load()
+})
+</script>
 ```
 
 </details>

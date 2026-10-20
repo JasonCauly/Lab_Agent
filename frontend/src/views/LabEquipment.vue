@@ -81,6 +81,13 @@
         />
       </div>
     </el-card>
+    <reserve-dialog
+      v-model:visible="reserveVisible"
+      :lab-id="lab?.id"
+      :lab-name="lab?.name"
+      :equipment-id="currentEquipment?.id"
+      :equipment-name="currentEquipment?.name"
+    ></reserve-dialog>
   </div>
 </template>
 
@@ -90,13 +97,15 @@ import { ElMessage } from 'element-plus'
 import { ref, reactive, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getEquipmentPageList } from '@/api/equipment'
-
+import ReserveDialog from '@/components/ReserveDialog.vue'
 const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
 const tableData = ref([])
 const total = ref(0)
 const lab = ref(null)
+const reserveVisible = ref(false)
+const currentEquipment = ref(null)
 const params = reactive({
   page: 1,
   page_size: 10,
@@ -119,8 +128,14 @@ const loadEquipment = async () => {
   }
 }
 
-const hanldeReserveLab = () => {}
-const hanldeReserveEquipment = () => {}
+const hanldeReserveLab = () => {
+  currentEquipment.value = null
+  reserveVisible.value = true
+}
+const hanldeReserveEquipment = (equipment) => {
+  currentEquipment.value = equipment
+  reserveVisible.value = true
+}
 const loadLab = async () => {
   try {
     const res = await getLab(params.lab_id)

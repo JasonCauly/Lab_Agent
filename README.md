@@ -1,6 +1,24 @@
 # Lab_Agent — 实验室智能预约管理系统
 
-基于 FastAPI、Vue 3、MySQL 的实验室管理系统，包含用户注册登录、JWT 身份认证、用户信息管理、实验室相关数据模型、文件上传等功能，为后续 Agent 智能预约功能提供基础。
+基于 FastAPI、Vue 3、MySQL 的实验室管理与预约项目。已实现用户与资源管理、实验室和设备浏览，以及预约提交、时间冲突检查和待审核记录保存。Agent 智能交互仍为后续计划。
+
+文档更新：2026-10-20。
+
+[学习与复习笔记](demo_1代码学习_复习笔记.md) · [逻辑审查记录](docs/logic-review-2026-10-20.md) · [指定问题修补说明](docs/logic-fixes-2026-10-20.md)
+
+## 当前功能与进度
+
+| 模块 | 当前实现 |
+| --- | --- |
+| 用户与登录 | 注册、JWT 登录、个人信息与头像、修改密码、管理员用户增删改查 |
+| 实验室与设备 | 资料管理、分页搜索、按实验室筛选设备、学生端卡片和详情浏览 |
+| 预约提交 | 共用预约弹窗、日期和时段填写、实验室/设备状态检查、设备归属检查、同资源时段冲突检查 |
+| 数据一致性 | 预约事务锁与死锁重试、用户名数据库唯一约束及升级脚本、有预约历史的资源和用户禁止删除 |
+| 表单和登录修补 | 设备新增重置、正整数容量、删除确认异常处理、JWT UTC 有效期、旧请求 401 防止误清新登录状态 |
+
+**预约当前仅完成提交阶段。** 新记录为待审核（status=0），会占用同资源时段；尚无“我的预约”、审核和取消接口及页面。整间实验室与其设备分别检查冲突，设备 quantity 尚未用于按数量预约。
+
+本轮指定修补覆盖 7 项问题，并不代表审查报告中的所有问题均已关闭。日期有效性、零时长、部分基础数据约束、旧会话失效和上传认证等仍需完善，详见学习笔记第 17 节。报告反映修补前发现的问题，应结合修补说明和当前代码阅读。
 
 ## 1. 技术栈
 
@@ -16,6 +34,8 @@
 | Pydantic Settings | 2.7.1 |
 | bcrypt | 5.0.0 |
 | PyJWT | 2.13.0 |
+| python-multipart | 0.0.32，文件上传表单解析 |
+| cryptography | 50.0.1 |
 | MySQL | 建议 MySQL 8.x |
 
 ### 前端
@@ -44,6 +64,7 @@ Lab_Agent/
 │   │   ├── common/         # 公共响应与异常处理
 │   │   ├── dependencies/   # 依赖注入、身份认证
 │   │   ├── models/         # 数据库模型
+│   │   ├── migrations/     # 现有库升级：用户名唯一索引
 │   │   ├── schemas/        # Pydantic 数据模型
 │   │   ├── services/       # 业务逻辑
 │   │   ├── utils/          # 工具函数
@@ -53,6 +74,7 @@ Lab_Agent/
 │   ├── .env                # 本地创建，不提交
 │   ├── .venv/              # Python 虚拟环境
 │   ├── uploads/            # 用户上传文件
+│   ├── tests/              # 临时 SQLite 隔离回归测试
 │   └── requirements.txt
 │
 ├── frontend/
@@ -72,6 +94,8 @@ Lab_Agent/
 │   ├── package-lock.json
 │   └── vite.config.js
 │
+├── docs/                   # 逻辑审查和修补记录
+├── demo_1代码学习_复习笔记.md
 └── README.md
 ```
 
@@ -222,7 +246,9 @@ Base.metadata.create_all(bind=engine)
 目前包括：
 
 - `users`：用户信息表
-- `lab`：实验室信息表
+- `labs`：实验室信息表（旧版本名为 `lab`）
+- `equipments`：设备表，通过 lab_id 关联实验室
+- `reservation`：预约表，关联用户、实验室和可选设备
 
 注意：
 
@@ -231,7 +257,31 @@ Base.metadata.create_all(bind=engine)
 3. 后端使用的数据库账号必须具有建表权限。
 4. `create_all()` 可以创建缺失的表，但不负责后续数据库结构迁移，也不会自动生成测试用户或业务数据。
 
-后续如果修改数据库表结构，建议使用 Alembic 管理迁移。
+新库的 users.username 会按当前模型创建唯一约束。MySQL 预约锁逻辑要求相关表使用 InnoDB。旧库请先阅读下一节，不能把 create_all() 当作升级工具。
+
+### 5.4 已有数据库升级
+
+升级前备份学习数据库，并暂停相关写入。当前有两项独立的结构变化：
+
+1. **实验室表由 lab 改名为 labs。** 设备和预约的实验室外键现指向 labs.id。当前没有自动改名、搬迁旧数据和调整外键的脚本；需先核对实际表结构，在保留实验室 ID 和关联关系的前提下制定迁移。直接启动可能创建空 labs 表，但不会把旧 lab 数据搬过来，也不会改写已有 equipments 外键。下面的用户名脚本不处理这项迁移。
+2. **users.username 增加唯一约束。** 旧 users 表需要执行专用升级脚本；已有重复用户名时脚本会停止，不会自动删除或合并用户。
+
+先检查重复用户名：
+
+```sql
+SELECT username, COUNT(*) AS account_count
+FROM users
+GROUP BY username
+HAVING COUNT(*) > 1;
+```
+
+确认目标数据库配置及数据后，在 backend 目录执行：
+
+```powershell
+.\.venv\Scripts\python.exe -m app.migrations.add_username_unique
+```
+
+脚本添加 uq_users_username 唯一索引；已存在用户名唯一约束时会跳过。若发现重复数据，先人工核实账号身份和历史预约归属，再处理数据并重试。完整说明见 [数据库升级与事务修补记录](docs/logic-fixes-2026-10-20.md)。本轮文档验证没有对现有 MySQL 执行升级。
 
 ## 6. 配置 FastAPI 后端
 
@@ -290,15 +340,7 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-当前仓库的依赖清单主要包含 FastAPI、Uvicorn、SQLAlchemy、PyMySQL、Pydantic Settings、bcrypt 和 PyJWT。
-
-此外，当前文件上传接口使用 `UploadFile`，还需要安装：
-
-```powershell
-python -m pip install python-multipart
-```
-
-仓库维护者应将 `python-multipart` 加入 `requirements.txt` 并固定经测试的版本，之后新环境就可以仅通过 `requirements.txt` 安装所有依赖。
+当前 requirements.txt 已包含 python-multipart 和 cryptography；按清单安装即可，无需再单独安装文件上传依赖。
 
 检查依赖：
 
@@ -426,15 +468,9 @@ npm install
 
 注意，`npm install` 可能更新 `package-lock.json`。
 
-当前前端入口文件使用了 `@element-plus/icons-vue`，但它尚未在当前 `package.json` 中显式声明。
+当前锁文件通过 Element Plus 的依赖包含 @element-plus/icons-vue，先按锁文件执行 npm ci。源码直接引用了该包，但 package.json 尚未把它列为直接依赖；这是后续依赖整理项，不需要每次启动都额外安装。
 
-首次配置时建议执行：
-
-```powershell
-npm install @element-plus/icons-vue
-```
-
-这会更新 `package.json` 和 `package-lock.json`，仓库维护者应将更新后的依赖清单提交到 GitHub。
+PowerShell 若限制 npm.ps1，可使用 npm.cmd ci、npm.cmd run dev 等对应命令。
 
 ### 7.3 配置前端环境变量
 
@@ -590,9 +626,17 @@ Authorization: Bearer <token>
 | `/api/user` | POST | 创建用户 |
 | `/api/user/{user_id}` | PUT | 更新指定用户 |
 | `/api/user/{user_id}` | DELETE | 删除指定用户 |
+| `/api/lab/list` | GET | 分页查询实验室 |
+| `/api/lab/{lab_id}` | GET | 查询实验室详情 |
+| `/api/lab` | POST | 新增实验室 |
+| `/api/lab/{lab_id}` | PUT / DELETE | 修改 / 删除实验室 |
+| `/api/equipment/list` | GET | 查询设备，可按 lab_id 筛选 |
+| `/api/equipment` | POST | 新增设备 |
+| `/api/equipment/{equipment_id}` | PUT / DELETE | 修改 / 删除设备 |
+| `/api/reservation` | POST | 提交实验室或设备预约 |
 | `/api/files/upload` | POST | 文件上传 |
 
-部分用户管理接口仅允许管理员调用。
+用户管理和资源写入接口要求管理员；资源查询和预约提交要求有效登录。当前文件上传接口尚未增加登录依赖，不能视为已有统一认证保护。
 
 具体参数和响应模型请以 FastAPI 的 `/docs` 为准。
 
@@ -617,6 +661,59 @@ http://127.0.0.1:8000/uploads/文件名
 默认单文件大小限制为 100MB，允许的文件扩展名在 `backend/app/config.py` 中定义。
 
 该目录不应直接提交到 GitHub。
+
+### 8.5 提交预约
+
+学生在“实验室列表”的卡片上预约实验室，或进入设备列表预约指定设备。三个入口共用 ReserveDialog.vue，提交到 POST /api/reservation。
+
+请求示例（ID 需替换为实际资源，日期和时段需符合实验室开放安排）：
+
+```json
+{
+  "lab_id": 8,
+  "equipment_id": null,
+  "date": "2099-10-20",
+  "start_time": "09:00",
+  "end_time": "10:00",
+  "remark": "课程实验"
+}
+```
+
+equipment_id 为 null 表示预约整间实验室；填写设备 ID 表示预约该设备，设备必须属于所选实验室。预约人由后端从 token 对应的当前用户取得，请求体不提供 user_id。
+
+成功返回 code=200、data=null，并保存 status=0 的待审核记录；此处不返回预约详情。状态 0、1 参与冲突判断，状态 2、3 不占用时段；相邻且不重叠的时段可以提交。当前无审核/取消入口，状态说明不代表这些流程已经实现。
+
+冲突和部分删除限制使用业务 code=409。当前统一业务异常响应仍为 HTTP 200，客户端需要读取 JSON 中的 code；参数校验错误使用 HTTP 422。
+
+### 8.6 准备学习环境的管理员
+
+项目没有内置默认管理员账号或密码，普通注册创建 student。可先注册一个专用于学习管理的账号，由数据库维护者确认账号后执行：
+
+```sql
+UPDATE users
+SET role = 'admin'
+WHERE username = 'YOUR_ADMIN_USERNAME';
+```
+
+把占位符替换为自己刚注册的唯一账号，再重新登录，让前端用户信息和菜单更新。随后创建实验室（容量必须大于 0）和设备，再用学生账号验证预约。
+
+### 8.7 回归检查与当前验证范围
+
+后端在 backend 目录运行：
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+```
+
+前端在 frontend 目录运行：
+
+```powershell
+npm.cmd run build
+```
+
+2026-10-20 重新验证：19 项后端测试通过，前端构建通过，存在包体积提示。后端测试覆盖并发预约、设备归属和历史冲突、并发账号创建、关联删除、升级脚本及 UTC 有效期；测试覆盖配置并使用临时 SQLite 数据，不连接现有 MySQL。MySQL 死锁/超时分支通过模拟异常验证。
+
+另完成预约弹窗和旧请求 401 的隔离函数检查。真实 MySQL/InnoDB 并发、旧库迁移及浏览器完整流程仍待验收；构建成功不能替代这些检查。
 
 ## 9. 常见问题
 
@@ -740,7 +837,8 @@ npm run dev
 - JWT Token 已过期或无效。
 - 请求没有携带 Authorization 头。
 - 修改了 `JWT_SECRET_KEY`，导致旧 Token 失效。
-- 当前用户没有访问相应接口的权限。
+
+当前用户没有管理员权限通常对应业务 code=403；账号禁用等情况也可能返回 HTTP 403，应结合响应内容区分。
 
 可以重新登录并检查浏览器开发者工具中的 Network 请求。
 
@@ -814,7 +912,7 @@ VITE_API_BASE_URL=
 
 这两个示例文件可以上传到 GitHub。
 
-下载项目后，Windows 用户可以执行：
+当前仓库尚未提供这两个模板。维护者添加模板后，Windows 用户才可以执行以下复制命令；目前请按第 6.4、7.3 节手动创建配置：
 
 ```powershell
 Copy-Item backend\.env.example backend\.env
@@ -836,7 +934,6 @@ cd Lab_Agent\backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-python -m pip install python-multipart
 
 # 配置好 backend/.env，确保 MySQL 已启动
 
@@ -848,7 +945,6 @@ python -m uvicorn app.main:app --reload
 ```powershell
 cd Lab_Agent\frontend
 npm ci
-npm install @element-plus/icons-vue
 
 # 配置好 frontend/.env.development
 
@@ -898,4 +994,4 @@ GitHub：
 
 https://github.com/JasonCauly/Lab_Agent
 
-项目持续开发中，后续将根据实际功能进展完善实验室预约和 Agent 智能交互模块。
+项目持续开发中，下一阶段重点是预约查询、审核、取消及剩余逻辑问题；Agent 智能交互尚未接入。详细实现、语法讲解和验收清单见 [学习笔记第 16、17 节](demo_1代码学习_复习笔记.md#16-reservation)。

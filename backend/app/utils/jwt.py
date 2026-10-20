@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import jwt
 from app.config import settings
 
@@ -12,7 +12,7 @@ def create_access_token(user_id: int) -> str:
     :param algorithm: The algorithm used for encoding (default is HS256).
     :return: A JWT access token as a string.
     """
-    expire = datetime.now() + timedelta(hours=settings.JWT_EXPIRE_HOURS)
+    expire = datetime.now(timezone.utc) + timedelta(hours=settings.JWT_EXPIRE_HOURS)
 
     payload = {"user_id": user_id, "exp": expire}
 

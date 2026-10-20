@@ -1,11 +1,14 @@
 from app.database import Base
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import String, Boolean
+from sqlalchemy import String, Boolean, UniqueConstraint
 
 
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = {"comment": "用户信息表"}
+    __table_args__ = (
+        UniqueConstraint("username", name="uq_users_username"),
+        {"comment": "用户信息表"},
+    )
 
     username: Mapped[str] = mapped_column(String(50), comment="账号")
     password: Mapped[str] = mapped_column(String(255), comment="密码")

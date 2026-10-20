@@ -238,16 +238,17 @@ const handleEdit = async (row) => {
 }
 
 // 删除用户信息
-const handleDelete = (row) => {
-  ElMessageBox.confirm(`确认删除用户【${row.username}】？`, '确认删除', { type: 'warning' }).then(
-    async () => {
-      const res = await deleteUserApi(row.id)
-      if (res.code === 200) {
-        ElMessage.success('删除用户成功')
-        load()
-      }
+const handleDelete = async (row) => {
+  try {
+    await ElMessageBox.confirm(`确认删除用户【${row.username}】？`, '确认删除', { type: 'warning' })
+    const res = await deleteUserApi(row.id)
+    if (res.code === 200) {
+      ElMessage.success('删除用户成功')
+      await load()
     }
-  )
+  } catch {
+    // 取消或关闭确认框无需处理，请求失败时由请求拦截器提示错误。
+  }
 }
 
 // 保存用户信息

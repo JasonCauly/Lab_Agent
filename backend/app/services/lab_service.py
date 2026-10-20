@@ -1,12 +1,15 @@
 from operator import or_
 from app.common.exceptions import BusinessException
 from app.common.response import PageResponse
+from app.models.equipment import Equipment
 from app.models.lab import Lab
+from app.models.reservation import Reservation
 from app.schemas.lab import (
     LabCreateRequest,
     LabResponse,
     LabUpdateRequest,
 )
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.utils.password import hash_password, verify_password
@@ -97,5 +100,21 @@ def delete_lab(db: Session, Lab_id: int):
     if not lab:
         raise BusinessException(message="实验室不存在")
 
-    db.delete(lab)
-    db.commit()
+    if db.query(Reservation.id).filter(Reservation.lab_id == Lab_id).first():
+        raise BusinessException(
+            message="该实验室存在预约记录，不能删除，可将实验室设为关闭状态", code=409
+        )
+    if db.query(Equipment.id).filter(Equipment.lab_id == Lab_id).first():
+        raise BusinessException(
+            message="该实验室下仍有设备，请先删除或转移设备", code=409
+        )
+
+    try:
+        db.delete(lab)
+        db.commit()
+    except IntegrityError as exc:
+        # 检查后仍可能新增关联记录，提交失败时回滚并返回业务提示。
+        db.rollback()
+        raise BusinessException(
+            message="该实验室存在关联数据，无法删除", code=409
+        ) from exc

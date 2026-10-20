@@ -55,7 +55,7 @@
               </div>
               <div style="margin-top: 12px; display: flex; gap: 8px">
                 <el-button style="flex: 1" @click="handelViewEquipment(item)">查看设备</el-button>
-                <el-button style="flex: 1" type="primary" @click="handelViewReserve(item)"
+                <el-button style="flex: 1" type="primary" @click="handelReserve(item)"
                   >预约</el-button
                 >
               </div>
@@ -74,6 +74,11 @@
         </div>
       </div>
     </el-card>
+    <reserve-dialog
+      v-model:visible="reserveVisible"
+      :lab-id="currentLab?.id"
+      :lab-name="currentLab?.name"
+    ></reserve-dialog>
   </div>
 </template>
 
@@ -83,7 +88,9 @@ import { getLabPageList } from '@/api/lab'
 import { Search } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import router from '@/router'
-
+import ReserveDialog from '@/components/ReserveDialog.vue'
+const reserveVisible = ref(false)
+const currentLab = ref(null)
 const loading = ref(false)
 const tableData = ref([])
 const labOptions = ref([])
@@ -159,8 +166,9 @@ const handelViewEquipment = (lab) => {
   router.push({ path: '/manager/labequipment', query: { lab_id: lab.id } })
 }
 
-const handelViewReserve = (lab) => {
-  ElMessage.info(`稍后开发${lab.name}`)
+const handelReserve = (lab) => {
+  currentLab.value = lab
+  reserveVisible.value = true
 }
 
 onMounted(() => {

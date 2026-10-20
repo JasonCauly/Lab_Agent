@@ -1,6 +1,11 @@
 // 存储token、用户信息, 获取token、用户信息, 删除token、用户信息
 const TOKEN_KEY = 'token'
 const USER_KEY = 'userInfo'
+let authVersion = 0
+
+export function getAuthVersion() {
+  return authVersion
+}
 
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY)
@@ -8,10 +13,12 @@ export function getToken() {
 
 export function setToken(token) {
   localStorage.setItem(TOKEN_KEY, token)
+  authVersion++
 }
 
 export function removeToken() {
   localStorage.removeItem(TOKEN_KEY)
+  authVersion++
 }
 
 export function getUserInfo() {

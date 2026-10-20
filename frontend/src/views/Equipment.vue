@@ -67,6 +67,7 @@
         <el-table-column label="操作" width="180">
           <template #default="{ row }">
             <el-button type="primary" text bg @click="handleEdit(row)">编辑</el-button>
+            <el-button type="danger" text bg @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -215,14 +216,13 @@ const rules = {
 const resetForm = () => {
   Object.assign(form, {
     id: null,
+    lab_id: null,
     name: '',
     description: '',
     img: '',
-    location: '',
-    capacity: 20,
-    open_time: '08:30',
-    close_time: '20:30',
-    status: true
+    spec: '',
+    quantity: 1,
+    status: 1
   })
 }
 
@@ -255,16 +255,17 @@ const handleEdit = (row) => {
 }
 
 // 删除信息
-const handleDelete = (row) => {
-  ElMessageBox.confirm(`确认删除【${row.name}】？`, '确认删除', { type: 'warning' }).then(
-    async () => {
-      const res = await deleteEquipmentApi(row.id)
-      if (res.code === 200) {
-        ElMessage.success('删除成功')
-        load()
-      }
+const handleDelete = async (row) => {
+  try {
+    await ElMessageBox.confirm(`确认删除【${row.name}】？`, '确认删除', { type: 'warning' })
+    const res = await deleteEquipmentApi(row.id)
+    if (res.code === 200) {
+      ElMessage.success('删除成功')
+      await load()
     }
-  )
+  } catch {
+    // 取消或关闭确认框无需处理，请求失败时由请求拦截器提示错误。
+  }
 }
 
 // 保存信息

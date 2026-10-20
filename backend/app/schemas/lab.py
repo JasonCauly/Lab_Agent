@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class LabResponse(BaseModel):
@@ -20,7 +20,7 @@ class LabCreateRequest(BaseModel):
     description: str | None = None
     img: str | None = None
     location: str | None = None
-    capacity: int = 0
+    capacity: int = Field(gt=0)
     open_time: str | None = None
     close_time: str | None = None
     status: bool = True
@@ -31,7 +31,7 @@ class LabUpdateRequest(BaseModel):
     description: str | None = None
     location: str | None = None
     img: str | None = None
-    capacity: int | None = None
+    capacity: int | None = Field(default=None, gt=0)
     open_time: str | None = None
     close_time: str | None = None
     status: bool | None = None

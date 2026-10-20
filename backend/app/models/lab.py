@@ -4,7 +4,7 @@ from sqlalchemy import Boolean, Integer, String
 
 
 class Lab(Base):
-    __tablename__ = "lab"
+    __tablename__ = "labs"
     __table_args__ = {"comment": "实验室信息"}
 
     name: Mapped[str] = mapped_column(String(50), comment="名称")

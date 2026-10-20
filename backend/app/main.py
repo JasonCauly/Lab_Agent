@@ -3,8 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from app.config import UPLOAD_DIR
+from app.models.equipment import Equipment
 from app.models.user import User
 from app.models.lab import Lab
+from app.models.equipment import Equipment
+from app.models.reservation import Reservation
 from app.database import engine, Base
 from app.api import api
 from app.common.exceptions import (

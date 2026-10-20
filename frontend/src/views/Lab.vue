@@ -101,7 +101,7 @@
             <el-input type="textarea" v-model="form.location" placeholder="请输入位置" />
           </el-form-item>
           <el-form-item label="容量" prop="capacity">
-            <el-input :min="1" v-model="form.capacity" placeholder="请输入容量" />
+            <el-input-number v-model="form.capacity" :min="1" :precision="0" placeholder="请输入容量" />
           </el-form-item>
           <el-form-item label="开放时间">
             <el-time-picker
@@ -240,16 +240,17 @@ const handleEdit = async (row) => {
 }
 
 // 删除信息
-const handleDelete = (row) => {
-  ElMessageBox.confirm(`确认删除【${row.name}】？`, '确认删除', { type: 'warning' }).then(
-    async () => {
-      const res = await deleteLabApi(row.id)
-      if (res.code === 200) {
-        ElMessage.success('删除成功')
-        load()
-      }
+const handleDelete = async (row) => {
+  try {
+    await ElMessageBox.confirm(`确认删除【${row.name}】？`, '确认删除', { type: 'warning' })
+    const res = await deleteLabApi(row.id)
+    if (res.code === 200) {
+      ElMessage.success('删除成功')
+      await load()
     }
-  )
+  } catch {
+    // 取消或关闭确认框无需处理，请求失败时由请求拦截器提示错误。
+  }
 }
 
 // 保存信息
