@@ -1,16 +1,18 @@
 # demo_1代码学习：复习笔记与后续任务
 
-整理日期：2026-10-20。
+整理日期：2026-10-21。
 
 > **使用方式**：先阅读概念和执行流程，再对照文件看代码。代码块中标明了文件路径。末尾的待办清单区分“已经讲过”和“尚待讲解、验证”。
 >
 > **最终目标**：理解 lab-agent 的设计与代码，并能够从空目录创建、配置、运行和检查项目。
 >
-> **当前进度**：第 16 节新增实验室与设备预约提交教程；第 17 节讲解事务锁、设备归属、用户名唯一约束、关联删除、表单和 JWT 等修补，以及登录请求竞态、登录跳转的路由实例与菜单状态处理。预约查询、审核、取消尚未实现；旧库迁移、真实 MySQL 并发与浏览器验收、全项目从零复现仍需完成。章节按日期保留历史代码，最新行为以相应更新章节为准。
+> **当前进度**：第 16 节讲解预约提交，第 17 节讲解逻辑修补与登录导航。第 18 节新增预约分页查询、本人取消和管理员通过/拒绝，主要预约业务流程已接通；补充状态转换、数据权限、表格名称来源、当前代码边界及验收清单。第 19 节按实际使用过程串起项目启动与各功能的文件、函数、请求和返回数据。旧库迁移、真实 MySQL 并发与浏览器验收、全项目从零复现仍需完成。章节按日期保留历史代码，最新行为以相应更新章节为准。
 >
 > **验证说明**：此前部分基础示例完成过验证。本笔记已经完成目录链接、代码块和整合示例的静态检查，但注册登录、身份验证等整合功能仍需在学习副本中实际运行确认。“已经讲过”不等于“已经在你的学习副本验证通过”。
 
 本笔记没有保存原项目的数据库密码、JWT 密钥或真实 token。配置示例中的占位符需要换成学习环境自己的值。
+
+2026-10-21 文件核对：当前工作区未包含早期的 docs 审查/修补文件及 backend/tests、frontend/tests。第 17 节的测试数量和命令保留为历史记录，本轮检查范围单独记在第 18.21 节。请勿把旧命令未发现测试误认为旧测试已重新通过。
 
 ## 目录
 
@@ -31,8 +33,10 @@
 15. [新增教程：学生端实验室列表、详情与关联设备浏览](#15-lab-browse)
 16. [新增教程：实验室与设备预约提交](#16-reservation)
 17. [新增教程：逻辑修补、事务并发与回归验证](#17-logic-fixes)
+18. [新增教程：我的预约、取消申请与管理员审核](#18-reservation-workflow)
+19. [整项目执行路线：从网页操作追踪到数据库，再回到页面](#19-code-flow)
 
-本次补充：[17.14 登录后地址已改变，页面为什么仍停留在登录页](#17-login-navigation)。
+最近更新：[整项目与各功能的逐文件执行路线](#19-code-flow)。预约业务详解见[第 18 节](#18-reservation-workflow)，登录导航补充见 [17.14](#17-login-navigation)。
 
 <a id="01-overview"></a>
 
@@ -2702,23 +2706,35 @@ location.reload()
 - [ ] 将实验室状态筛选的 if status 改为明确判断是否传参，并验证 False 的筛选结果。
 - [ ] 明确学生能否查看停用实验室；若只允许启用资源，前后端都要落实该规则。
 - [ ] 修正 LabList.vue 的 header 插槽，清理无用表单、额外列表请求及未导入 nextTick 的闲置逻辑。
-- [ ] 整理菜单重复属性，确定设备详情页的菜单高亮规则。
+- [x] 菜单重复属性已整理为 :default-active="route.path"（第 17.14 节）；设备详情页映射到实验室列表菜单的高亮规则仍需确定。
 - [ ] 如需支持同页切换实验室，监听路由 lab_id，重置分页并处理请求先后顺序。
 - [x] 预约按钮已接入公共弹窗、POST 接口和预约表，保存待审核记录；加入资源及重叠检查和并发保护（2026-10-20，第 16、17 节）。
-- [ ] 补齐预约查询、审核、取消；完善日期、零时长、数量和实验室/设备互斥规则。
+- [x] 补齐预约查询、审核、取消（2026-10-21，第 18 节）。
+- [ ] 完善日期、零时长、数量和实验室/设备互斥规则。
 - [ ] 完成第 15.22 节真实浏览器验收，并与前面章节合并进行从零复现检查。
 
 ### 10.12 预约与修补后的新增验收（第 16、17 节）
 
 - [x] 完成预约提交及 7 项指定修补的代码讲解，核对审查报告与当前代码的对应状态。
-- [x] 重新运行 19 项后端隔离回归测试、前端构建，以及预约弹窗和旧会话 401 的函数检查。
-- [x] 补充登录页与布局使用当前应用路由实例的改法；6 项前端登录回归测试通过。
+- [x] 2026-10-20 曾重新运行 19 项后端隔离回归测试、前端构建，以及预约弹窗和旧会话 401 的函数检查；当前工作区缺少原后端测试文件。
+- [x] 补充登录页与布局使用当前应用路由实例的改法；当时 6 项前端登录回归测试通过，当前工作区缺少原前端测试文件。
 - [ ] 在有备份的学习库核对 lab → labs 的数据、ID 和外键迁移；当前没有这项自动迁移脚本。
 - [ ] 旧 users 表检查重复账号并执行用户名唯一索引升级；本次未对现有数据库执行。
 - [ ] 在真实 MySQL/InnoDB 环境验证并发预约、锁等待和回滚。
 - [ ] 完成第 16.19 节浏览器验收；第 17.16 节未解决项继续跟进。
 - [ ] 在真实浏览器确认登录后首页内容立即显示，并完成第 17.14 节的导航、退出和重新登录检查。
-- [ ] 在空目录、空学习数据库中完成一次安装、初始化、管理资源和提交预约的完整复现。
+- [ ] 在空目录、空学习数据库中完成一次安装、初始化、管理资源、提交、查询、取消和审核预约的完整复现。
+
+### 10.13 预约查询、取消和审核后的新增验收（第 18 节）
+
+- [x] 完成两种角色的数据范围、名称组装、分页响应、状态转换和页面操作的教学说明。
+- [x] 完成 33 个后端隔离断言、18 组前端场景检查与前端构建；检查范围见第 18.21 节。
+- [ ] 统一前端 pageSize 与后端 page_size，并增加分页范围与状态取值校验。
+- [ ] 补齐列表 loading、Search 图标绑定，调整审核页面标题；处理筛选重复请求和查询失败反馈。
+- [ ] 为取消与审核增加原子状态转换或一致的事务锁，并在真实 MySQL 验证竞争操作。
+- [ ] 明确过期申请、资源关闭后的审核，以及是否需要审核人、审核时间和拒绝理由。
+- [ ] 恢复并维护可重复运行的测试文件；不要仅保留一次性测试结果。
+- [ ] 按第 18.20 节完成三个账号的浏览器验收，再进行全项目从零复现。
 
 <a id="11-references"></a>
 
@@ -8802,7 +8818,7 @@ def delete_user(db: Session, user_id: int, currut_user: User):
 
 更新时间：2026-10-19。本节对照第 14 节的代码快照，讲解你最近完成的前后端改动。
 
-> **2026-10-20 更新提示**：本节保留当日历史。预约入口现已接通提交功能，设备重置、容量输入和关联删除已有修补，设备管理删除按钮也已恢复。最新说明见第 16、17 节；预约查询、审核与取消仍未实现。
+> **2026-10-21 更新提示**：本节保留历史。预约入口已接通提交功能，设备重置、容量输入和关联删除已有修补，设备管理删除按钮也已恢复。第 16、17 节说明提交及修补；第 18 节已补齐查询、审核与取消，勿将本节旧的预约占位代码当作当前实现。
 
 > 本次更新教学文档，业务源码保持本次读取时的内容。第 14 节解释资源怎样创建和维护，本节解释学生怎样找到实验室、查看介绍，并查询这个实验室的设备。
 >
@@ -11038,9 +11054,9 @@ export default router
 
 更新时间：2026-10-20。本章根据本轮预约代码讲解，第 17 章继续解释相应修补和验证。
 
-> 第 15 章中预约按钮是占位；现在三个预约入口都接到了公共弹窗，并能请求后端保存待审核记录。本章描述的是“提交预约”这个阶段，查询、审核和取消还需要继续开发。
+> 第 15 章中预约按钮是占位；本章记录 2026-10-20 的“提交预约”阶段，三个入口接到了公共弹窗并保存待审核记录。2026-10-21 已增加查询、审核与取消，见第 18 节；本章旧快照保留作对照。
 >
-> [逻辑审查](docs/logic-review-2026-10-20.md)记录修补前的问题，[指定修补说明](docs/logic-fixes-2026-10-20.md)记录后续处理。阅读时不能把两份文档都当成当前最终状态；第 17.16 节给出逐项对照。
+> 原 docs/logic-review-2026-10-20.md 记录修补前的问题，docs/logic-fixes-2026-10-20.md 记录后续处理；当前工作区已不含这两个文件。相关说明保留于第 17 节，第 17.16 节给出逐项对照。
 
 ### 16.1 先确定预约要保存什么
 
@@ -11563,7 +11579,7 @@ submitting 保护当前组件的一次操作；两个浏览器、两个用户甚
 
 本轮提交只写入 0。状态字段允许表达后续阶段，不代表已经有接口把 0 改成 1、2、3。
 
-因此现在待审核记录会持续参与对应日期和时段的冲突判断，而用户还不能通过页面查看、取消，管理员也不能通过正常页面审核。下一步需要围绕真实流程补齐状态转换和权限。
+在本章记录的 2026-10-20 版本中，待审核记录参与冲突判断，但还不能通过页面查看、取消或审核。第 18 节已补齐这些流程：拒绝和取消后不再占用时段，通过后继续占用。
 
 ### 16.18 从零编写这一模块的顺序
 
@@ -11601,7 +11617,7 @@ submitting 保护当前组件的一次操作；两个浏览器、两个用户甚
 | 开始早于开放、结束晚于关闭 | 后端拒绝 |
 | 当天已过去的开始时间 | 按服务端当前分钟拒绝 |
 | 零时长、非法日期 | 当前仍有漏洞，作为后续修补验收用例，不记为已正确拒绝 |
-| 查看、审核、取消预约 | 当前没有入口，不记为已实现 |
+| 查看、审核、取消预约 | 当日没有入口；2026-10-21 已实现，按第 18.20 节验收 |
 | 直接调用接口时登录失效 | 后端拒绝，前端按当前会话处理 401 |
 
 遇到业务 code=409，要同时检查 HTTP 状态：当前 BusinessException 的统一响应使用 HTTP 200。HTTP 200 只表示 HTTP 请求得到正常处理的响应，业务是否成功还要看 JSON.code。
@@ -12493,11 +12509,13 @@ onMounted(() => {
 
 更新时间：2026-10-20。本章把修补与原来的错误原因联系起来，帮助你理解“正常操作能成功”之后，还需要怎样处理同时请求、失败和旧数据。
 
+> 2026-10-21 补充：本章保留原修补和测试过程。原 docs 文档及前后端 tests 目录当前均不存在，下面的 19 项、6 项结果仅代表当时验证。预约查询、取消和审核的最新实现见第 18 节；新函数的并发更新不在原创建预约锁的保护范围内。
+
 ### 17.1 怎样阅读“审查”和“修补”两份记录
 
-[logic-review-2026-10-20.md](docs/logic-review-2026-10-20.md)包含 18 项问题及两项待明确的业务规则，是修补前的检查记录。
+原 docs/logic-review-2026-10-20.md 包含 18 项问题及两项待明确的业务规则，是修补前的检查记录（当前工作区无此文件）。
 
-[logic-fixes-2026-10-20.md](docs/logic-fixes-2026-10-20.md)说明按问题名称选择修复的 7 项。名称与代码对应如下：
+原 docs/logic-fixes-2026-10-20.md 说明按问题名称选择修复的 7 项（当前工作区无此文件）。名称与代码对应如下：
 
 | 指定修补 | 当前实现位置 |
 | --- | --- |
@@ -12963,7 +12981,7 @@ const route = useRoute()
 
 #### 如何验证这次修改
 
-新增测试文件是 [frontend/tests/login-navigation.test.mjs](frontend/tests/login-navigation.test.mjs)。它编译真实 Login.vue 的脚本，使用实际 Vue 渲染器和 Vue Router 的内存历史，模拟接口、表单校验、保存登录信息等外部依赖；不访问现有数据库。
+当时新增测试文件为 frontend/tests/login-navigation.test.mjs（2026-10-21 当前工作区无此文件）。它编译真实 Login.vue 的脚本，使用实际 Vue 渲染器和 Vue Router 的内存历史，模拟接口、表单校验、保存登录信息等外部依赖；不访问现有数据库。下面是当时的执行方式，恢复文件后才能复跑这些用例。
 
 `frontend/package.json` 增加了 `"test": "node --test"`。在 `frontend` 目录执行：
 
@@ -12986,14 +13004,14 @@ npm.cmd run build
 
 ### 17.15 回归测试到底证明了什么
 
-本轮重新执行了仓库现有测试：
+2026-10-20 当时重新执行了仓库中的测试；当前缺少对应测试目录，下面命令保留为历史记录：
 
 ```powershell
 # 在 backend 目录
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-结果为 19 项通过。测试文件是 [backend/tests/test_logic_fixes.py](backend/tests/test_logic_fixes.py)，主要覆盖：
+当时结果为 19 项通过。测试文件为 backend/tests/test_logic_fixes.py（当前工作区无此文件），主要覆盖：
 
 - 同资源完全相同和部分重叠时段的并发提交，最终一条成功、一条业务冲突。
 - 相邻时段、不同日期和不同资源；状态 0/1 阻塞，2/3 不阻塞。
@@ -13024,7 +13042,7 @@ ThreadPoolExecutor 模拟多个执行线程，Barrier 让它们在某一步会�
 | 1 并发重复预约 | 已加入事务锁、锁定读、回滚和重试，隔离测试通过 | 真实 MySQL/InnoDB 并发待验收 |
 | 2 设备归属缺失 | 已修补 | 以后新增预约入口也要复用规则 |
 | 3 设备转移绕过预约 | 部分处理 | 同设备历史冲突不再因 lab_id 变化漏查；未来预约与转移政策尚未补齐 |
-| 4 缺少查询、审核和取消 | 未实现 | 目前只能提交待审核记录 |
+| 4 缺少查询、审核和取消 | 2026-10-21 已补齐主要流程 | 第 18 节；并发状态转换及浏览器验收仍待完善 |
 | 5 并发同名账号 | 代码与升级脚本已补齐 | 旧库约束实际升级尚未执行 |
 | 6 非法日期与零时长 | 仍待修补 | 时间文本已规范，date 仍是 str，结束等于开始仍可通过这项校验 |
 | 7 基础数据约束不足 | 部分处理 | 容量已修补；设备数量/状态、开放时间等仍待完善 |
@@ -13099,7 +13117,7 @@ README 当前补充了学习环境管理员的准备方式；普通注册默认�
 
 ### 17.20 本章修补代码快照
 
-以下保存本轮相关实现。预约服务、Reservation 模型、公共弹窗及两个预约入口在第 16.20 节；本节保存其他修补文件。完整回归测试另见仓库中的 backend/tests/test_logic_fixes.py，避免把测试结果当作未执行的建议。
+以下保存本轮相关实现。预约服务、Reservation 模型、公共弹窗及两个预约入口在第 16.20 节；本节保存其他修补文件。原完整回归测试位于 backend/tests/test_logic_fixes.py，当前工作区已不含此文件，历史结果不能代替本轮验证。
 
 <details>
 <summary><code>backend/app/models/user.py</code></summary>
@@ -14998,6 +15016,2291 @@ onMounted(() => {
 ```
 
 </details>
+
+---
+
+<a id="18-reservation-workflow"></a>
+
+## 18. 新增教程：我的预约、取消申请与管理员审核
+
+更新时间：2026-10-21。依据本次实际源码整理。
+
+第 16 节解决了“把预约申请存进数据库”，这一节继续解决“谁能看、怎样取消、管理员怎样作出决定”。普通用户申请和取消、管理员通过和拒绝的主要业务代码已经写出。下面按实际执行过程讲解，再单独记录待完善项；建议代码均明确标注，不代表已经修改业务源码。
+
+### 18.1 先把本轮功能与上一轮连接起来
+
+一次预约现在可以经历这样的过程：
+
+```text
+学生浏览实验室或设备
+  → ReserveDialog.vue 填写申请
+  → POST /api/reservation 保存待审核记录
+  → MyReservation.vue 查询自己的申请
+  → 本人取消，或者由管理员在 AuditReservation.vue 审核
+  → 修改数据库中的 status
+  → 页面重新查询，显示最新结果
+```
+
+申请仍使用原来的公共弹窗和创建接口。本次主要增加的是列表接口、取消接口、审核接口、两个列表页面，以及菜单与路由入口。没有另外创建“待审核表”“通过表”或“取消表”：各种状态的记录都在 reservation 表中。
+
+当前普通注册创建 student 角色，前端菜单也按 student/admin 显示；后端列表则把所有非 admin 用户限制为查询本人。不要把这两处判断误认为同一段代码。
+
+### 18.2 用状态转换理解业务规则
+
+**状态**表示记录现在处于哪个阶段；**状态转换**表示某个操作允许把它从哪个阶段改到哪个阶段。
+
+```mermaid
+stateDiagram-v2
+    state "待审核（0）" as Pending
+    state "已通过（1）" as Approved
+    state "已拒绝（2）" as Rejected
+    state "已取消（3）" as Cancelled
+    [*] --> Pending: 提交申请
+    Pending --> Approved: 管理员通过
+    Pending --> Rejected: 管理员拒绝
+    Pending --> Cancelled: 本人取消
+```
+
+这张图描述当前正常、顺序执行时的业务规则；并发保证还需要第 18.17 节的处理。
+
+| 当前状态 | 谁可以操作 | 允许的操作 | 是否参与同资源时段冲突检查 |
+| --- | --- | --- | --- |
+| 0：待审核 | 本人或管理员，分别检查权限 | 本人取消；管理员通过或拒绝 | 是 |
+| 1：已通过 | 当前没有继续转换的接口 | 不能再审核，不能取消 | 是 |
+| 2：已拒绝 | 当前没有继续转换的接口 | 可另行提交新申请 | 否 |
+| 3：已取消 | 当前没有继续转换的接口 | 可另行提交新申请 | 否 |
+
+“取消”和“删除”不同。取消只把 status 改为 3，原 ID、预约人、日期和资源仍保留。拒绝也一样保留记录。这与前一轮“有任意预约历史的用户或资源禁止删除”的规则相容：不再占用时段，不等于可以抹掉历史归属。
+
+管理员有审核权限，但当前取消函数仍只允许本人取消自己的待审核记录，没有“管理员替任何人取消”的特殊分支。
+
+### 18.3 文件地图与从零编写顺序
+
+| 文件 | 本次职责 |
+| --- | --- |
+| backend/app/models/reservation.py | 沿用预约表、status 和关联关系；本轮没有新增字段 |
+| backend/app/schemas/reservation.py | 新增列表响应模型、审核请求模型 |
+| backend/app/services/reservation_service.py | 查询范围、分页、名称组装、取消和审核的状态检查 |
+| backend/app/api/reservation.py | GET 列表、PUT 取消、PUT 审核及身份依赖 |
+| frontend/src/api/reservation.js | 封装三个新请求 |
+| frontend/src/views/MyReservation.vue | 本人预约查询、筛选、翻页和取消 |
+| frontend/src/views/AuditReservation.vue | 管理员查询、查看预约人、通过和拒绝 |
+| frontend/src/router/index.js | 注册两个页面 |
+| frontend/src/layouts/Layout.vue | 按角色显示预约菜单 |
+| frontend/vite.config.js | 本轮修正 uploads 代理注释，代理目标和行为没有变化 |
+
+这些文件不是每个都要重复写业务规则。页面负责收集操作与展示，API 层负责接收请求和检查身份，service 层负责业务与数据库操作，schema 负责数据形状与类型。
+
+### 18.4 数据库模型、请求模型与响应模型为什么要分开
+
+| 模型 | 用在哪里 | 举例 |
+| --- | --- | --- |
+| Reservation | SQLAlchemy 数据库模型 | 对应 reservation 表的一行 |
+| ReservationCreateRequest | 创建请求 | 接收 lab_id、日期、时段等 |
+| ReservationResponse | 查询响应 | 返回记录字段，还包括 lab_name 等展示字段 |
+| AuditReservationRequest | 审核请求 | 只接收 status |
+
+数据库里保存 lab_id，是为了关联实验室；页面需要 lab_name，是为了显示名称。响应模型可以比数据库表多出展示字段，不必因此给预约表增加同名列。
+
+本次审核模型：
+
+```python
+class AuditReservationRequest(BaseModel):
+    status: int  # 1 or 2
+```
+
+status: int 声明整数类型；后面的注释供人阅读，不会自动限制为 1 或 2。当前真正的允许值检查在 service 中：
+
+```python
+if status not in [1, 2]:
+    raise BusinessException(message="审核状态错误")
+```
+
+因此 `{"status": 3}` 可以先通过这个请求模型，但随后会被业务层拒绝。将来可用 Literal 或枚举把允许值也写进模型，届时非法输入的错误路径和状态码可能变化，需要同步测试。
+
+### 18.5 三个新接口怎样接入后端
+
+API 总路由前缀是 /api，预约路由前缀是 /reservation，各函数再提供最后一段路径：
+
+| HTTP 方法 | 完整路径 | 参数来源 | 身份与业务限制 |
+| --- | --- | --- | --- |
+| GET | /api/reservation/list | 查询字符串 page、page_size、status | 有效登录；service 决定数据范围 |
+| PUT | /api/reservation/{reservation_id}/cancel | URL 中的预约 ID | 有效登录；service 检查本人、待审核 |
+| PUT | /api/reservation/{reservation_id}/audit | URL 中的 ID、JSON 中的 status | 管理员；service 检查目标状态与待审核 |
+
+例如：
+
+```http
+GET /api/reservation/list?page=1&page_size=10&status=0
+```
+
+这里的 0 在 URL 中是文本，FastAPI 根据 status: int | None 转换、校验为 Python 整数。省略 status 使用 None，意思是“不按状态过滤”；显式传 0 则是“只查待审核”。
+
+审核函数虽然没有在函数体中使用 current_user，下面的依赖仍然会先执行：
+
+```python
+current_user: User = Depends(get_current_admin)
+```
+
+Depends 表示“在调用当前接口前，先取得这个依赖的结果”。get_current_admin 又依赖 get_current_user：验证 token、按用户 ID 查询数据库、检查用户状态，再检查数据库用户的 role 是否为 admin。它不是根据前端菜单决定权限，也不是只信任前端传来的角色。
+
+审核 service 没有接收 current_user，管理员校验发生在 API 边界。将来从定时任务或其他入口调用该 service 时，也应明确调用权限，不能以为函数内部自动完成管理员认证。
+
+### 18.6 同一个列表接口，为什么学生只看到自己
+
+关键代码：
+
+```python
+query = db.query(Reservation)
+if current_user.role != "admin":
+    query = query.filter(Reservation.user_id == current_user.id)
+if status is not None:
+    query = query.filter(Reservation.status == status)
+```
+
+query 可以理解成逐步拼装的查询条件。filter 用来追加条件，并返回带有条件的查询对象，所以这里把结果重新赋给 query。
+
+假设学生 A 的 ID 为 7，并筛选待审核，最终查询的含义是：
+
+```sql
+SELECT *
+FROM reservation
+WHERE user_id = 7 AND status = 0;
+```
+
+管理员不添加 user_id 条件，所以可以看到不同用户的记录。列表请求无需传 user_id；即使有人修改浏览器里的用户信息，后端仍使用已认证的 current_user。
+
+这里必须写 `if status is not None`。Python 中整数 0 被当作假值，若写 `if status`，就会跳过“待审核”的筛选。这正好对应前面实验室布尔筛选的学习重点：检查“是否提供”，不能简单代替为检查“是否为真”。
+
+### 18.7 count、offset、limit 怎样组成分页
+
+当前代码先统计满足筛选的全部记录，再取其中一页：
+
+```python
+total = query.count()
+items = (
+    query.order_by(Reservation.id.desc())
+    .offset((page - 1) * page_size)
+    .limit(page_size)
+    .all()
+)
+```
+
+- count()：统计过滤后的总数，供分页组件显示。
+- order_by(...desc())：按 ID 从大到小，通常新记录在前；不是按预约日期排序。
+- offset：跳过多少条。例如第 3 页、每页 10 条，跳过 20 条。
+- limit：本次最多取多少条。
+- all()：执行这一页的查询，取得 ORM 对象列表。
+
+total 不等于当前页数组长度。假设总共有 25 条，第 3 页只返回 5 条，但 total 仍是 25。
+
+当前 page 和 page_size 只标注了 int，尚未限制 page >= 1、合理的 page_size 上限；status 也没有限制为 0～3。这些属于输入边界待完善项。
+
+### 18.8 model_validate 与名称字段的组装
+
+列表不会直接把数据库对象原样交给页面，而是逐行转换：
+
+```python
+res = ReservationResponse.model_validate(item)
+res.user_name = item.user.name if item.user else None
+res.lab_name = item.lab.name if item.lab else None
+res.equipment_name = item.equipment.name if item.equipment else None
+res.type = "设备" if item.equipment_id else "实验室"
+```
+
+ReservationResponse 中配置了：
+
+```python
+model_config = ConfigDict(from_attributes=True)
+```
+
+这使 model_validate 可以按字段名读取对象属性，例如 item.id、item.status，校验并建立一个响应模型。它与 model_dump 的方向不同：model_validate 是“输入数据或对象 → 模型”，model_dump 是“模型 → 字典”。model_config 是框架约定的配置名，不能随意改名。[Pydantic 对象属性校验说明](https://docs.pydantic.dev/latest/concepts/models/#arbitrary-class-instances)
+
+`item.lab` 来自 Reservation 的 SQLAlchemy relationship；lab_id 把预约与 labs 表中的实验室关联起来。访问关联对象时，ORM 可能需要额外查询。当前没有显式配置列表的批量预加载，大量记录时可再评估关联查询开销。
+
+`item.lab.name if item.lab else None` 是 Python 条件表达式：存在关联实验室就取名称，否则用 None。equipment 可以为空，因为整间实验室预约没有设备 ID。
+
+`lab_name` 不是 Reservation 上已有的同名属性，model_validate 不会猜出它等于 lab.name。因此响应模型先允许它为 None，再由 service 明确填入。user_name 和 equipment_name 同理。
+
+type 是当前响应中组装出的“实验室”或“设备”文字，不是预约表新增的字段；user_name 取的是用户的 name，而非登录账号 username。这些名称取自当前关联资料，若实验室或用户改名，下一次查询可能显示新名称，尚未保存提交时的名称快照。
+
+### 18.9 lab_name 最后怎样显示到表格
+
+你当前选中的代码是：
+
+```vue
+<el-table-column prop="lab_name" label="实验室" width="200" />
+```
+
+它的作用是：对表格中的每一行，读取该行对象的 lab_name，显示在标题为“实验室”的这一列，列宽为 200。
+
+完整的数据路线是：
+
+```text
+reservation.lab_id
+  → ORM 关联 item.lab
+  → item.lab.name
+  → service 赋值 res.lab_name
+  → PageResponse.list 中的一项
+  → Response.data.list
+  → 前端 res.data.list
+  → tableData.value
+  → el-table 的一行 row
+  → prop="lab_name" 读取 row.lab_name
+```
+
+列表响应示例（以下 ID 与名称仅用于说明）：
+
+```json
+{
+  "code": 200,
+  "message": "请求成功",
+  "data": {
+    "list": [
+      {
+        "id": 42,
+        "user_id": 7,
+        "user_name": "学生A",
+        "lab_id": 8,
+        "lab_name": "物理实验室",
+        "equipment_id": null,
+        "equipment_name": null,
+        "type": "实验室",
+        "date": "2099-10-21",
+        "start_time": "09:00",
+        "end_time": "10:00",
+        "remark": "课程实验",
+        "status": 0
+      }
+    ],
+    "total": 1
+  }
+}
+```
+
+prop 是 Element Plus 规定的列属性，它指向 data 数组中对象的字段。它不会自己发送 HTTP 请求，也不会直接查询数据库。[Element Plus 表格说明](https://element-plus.org/en-US/component/table.html)
+
+如果标题显示了但名称为空，沿这条路线检查 Network 的响应是否有 lab_name、页面是否赋值 tableData、列名是否一致。只改 label 会改变标题；把 prop 改成 labName，后端也必须提供同名字段才能显示。
+
+### 18.10 前端 API：params、data 与路径参数
+
+这三个位置承担不同的事情：
+
+```js
+// 查询条件放在 URL 查询字符串
+getReservationPageList({ page: 1, page_size: 10, status: 0 })
+
+// ID 放在路径中，当前取消接口不需要请求体
+cancelReservationApi(42)
+
+// ID 在路径中；审核结果放在 JSON 请求体
+auditReservationApi(42, 1)
+```
+
+审核封装的关键部分：
+
+```js
+return request({
+  url: `/api/reservation/${id}/audit`,
+  method: 'put',
+  data: { status }
+})
+```
+
+反引号定义模板字符串，`${id}` 把实际 ID 插入地址。`{ status }` 是对象属性简写，等价于 `{ status: status }`。
+
+与前面的 loginApi 一样，request 是默认导入的 Axios 实例，调用后返回 Promise。await 等到请求完成；request.js 的响应拦截器返回响应正文，因此页面得到的是包含 code、message、data 的对象，不是完整 Axios Response。列表数据才需要再读 res.data.list。
+
+### 18.11 两个页面怎样筛选和显示状态
+
+两个页面结构基本相同，但默认值不同：
+
+| 页面 | params.status 初始值 | 初次列表范围 | 操作列 |
+| --- | --- | --- | --- |
+| MyReservation.vue | null | 普通用户自己的全部状态 | 待审核行显示取消 |
+| AuditReservation.vue | 0 | 管理员可见的全部待审核 | 待审核行显示通过、拒绝 |
+
+管理员页面还增加 user_name 列，便于区分申请人。它目前的卡片标题仍写“我的预约记录”，属于复制后的文案待调整，实际查询范围由后端身份决定。
+
+筛选项写成 `:value="0"`，表示数字 0；如果写 `value="0"`，通常传给绑定值的是字符串。下面的严格比较要求类型一致：
+
+```vue
+<template v-if="row.status === 0">
+  <el-button @click="handleAudit(row, 1)">通过</el-button>
+  <el-button @click="handleAudit(row, 2)">拒绝</el-button>
+</template>
+```
+
+`#default="{ row }"` 是默认作用域插槽：表格把当前行传给这段模板，`{ row }` 取出行对象，再用自己的标签和按钮渲染。
+
+状态名称函数：
+
+```js
+const statusText = (status) => {
+  return { 0: '待审核', 1: '已通过', 2: '已拒绝', 3: '已取消' }[status] || '-'
+}
+```
+
+这里创建了一张“数字 → 文字”的映射表，再用 `[status]` 查值。例如 status=2 得到“已拒绝”；没有对应值时用 `'-'`。statusType 用相同方法得到 warning、success、danger、info，控制标签颜色。
+
+隐藏非待审核行的按钮是界面提示，真正阻止非法操作的仍是后端状态检查。
+
+### 18.12 列表 load、分页与响应式更新
+
+两个页面都用 ref 保存列表、总数和加载状态，用 reactive 保存查询条件。onMounted 调用 load，进入页面就开始查询。
+
+当前 load 的主要动作：
+
+```js
+const res = await getReservationPageList(params)
+if (res.code === 200) {
+  tableData.value = res.data?.list
+  total.value = res.data?.total
+}
+```
+
+脚本中要用 `.value` 读写 ref；模板里的 tableData 和 total 会自动解包。新数组赋给 tableData.value 后，Vue 更新表格，不需要手动拼接 HTML。
+
+`?.` 是可选链：当 data 为 null 或 undefined 时，表达式得到 undefined，避免直接读属性报错；它不等于“没有数据自动给空数组”。若需要默认数组和数字，可以写 `res.data?.list ?? []`、`res.data?.total ?? 0`。
+
+handleSearch 先把 page 改为 1 再查询，是为了避免在第 3 页切换筛选后，新结果只有一页却仍请求第 3 页。分页组件的 current-change 调用 load；当前布局没有每页条数选择器，只提供总数、上一页、页码和下一页。
+
+有两个实际细节需要理解：
+
+1. 页面使用 pageSize，后端接收 page_size；API 封装直接传 params，并没有转换名字。现在两边默认都是 10，所以看起来能用，但不是后端识别了 pageSize。
+2. loading 初始为 false，finally 只把它设回 false，load 开始时没有设为 true，所以当前 v-loading 不会因查询自动开启。
+
+建议写法见第 18.18 节，当前源码快照仍保留真实实现。
+
+### 18.13 本人取消：从确认框到数据库
+
+前端操作顺序：
+
+```text
+点击当前行的取消按钮
+  → await 确认框
+  → 确认后调用 cancelReservationApi(row.id)
+  → res.code === 200 时提示成功
+  → await load() 重新取得列表
+```
+
+确认框返回 Promise。点击确认才继续向下执行；关闭或取消确认框会进入 catch，因此不会发出预约取消请求。页面的 catch 还接住网络失败，网络错误提示由 request.js 负责。
+
+后端取消函数的顺序不能漏掉：
+
+```python
+item = db.query(Reservation).filter(Reservation.id == reservation_id).first()
+if not item:
+    raise BusinessException(message="预约记录不存在")
+if item.user_id != current_user.id:
+    raise BusinessException(message="无权限", code=403)
+if item.status != 0:
+    raise BusinessException(message="当前状态无法取消")
+item.status = 3
+db.commit()
+```
+
+first() 取得第一条匹配记录，没有则是 None。raise 使函数在错误处结束，不会继续执行修改和 commit。
+
+item.status = 3 先改变当前 ORM 对象；commit 提交事务，ORM 会把修改写入数据库。当前使用的是更新操作，不调用 db.delete，也不从前端数组中直接删除这行。正常返回 Response.success() 的 data 是 null，页面通过重新查询得到新的状态。
+
+### 18.14 管理员通过与拒绝：一个接口两种结果
+
+两个按钮复用 handleAudit(row, status)：通过传 1，拒绝传 2。页面根据 status 生成确认文字，确认后发送请求。
+
+后端先检查目标状态，再查询记录并检查原状态：
+
+```python
+if status not in [1, 2]:
+    raise BusinessException(message="审核状态错误")
+item = db.query(Reservation).filter(Reservation.id == reservation_id).first()
+if not item:
+    raise BusinessException(message="预约记录不存在")
+if item.status != 0:
+    raise BusinessException(message="当前状态不支持审核")
+item.status = status
+db.commit()
+```
+
+这是“只能把待审核改为通过或拒绝”，不是让管理员随意传任意数字修改记录。
+
+当前审核请求只包含 status，没有拒绝理由输入框，也没有保存审核人或审核时间的专门字段。继承的 update_time 是记录最后更新时间，不足以替代完整审核记录。
+
+管理员页面默认只查 status=0。通过或拒绝成功后 load 再次查询，这条记录不再满足过滤条件，于是从当前表格中消失。切换到已通过或已拒绝可重新看到；它没有被删除。
+
+普通用户页面不会收到实时推送；管理员处理后，用户需要重新查询或再次进入页面才能看到新结果。
+
+### 18.15 错误、权限与 Promise 的关系
+
+| 场景 | 当前后端响应方式 | 页面如何处理 |
+| --- | --- | --- |
+| 查询、取消或审核成功 | HTTP 200，业务 code=200 | 读取列表或提示并刷新 |
+| 取消他人记录、普通用户审核 | HTTP 200，业务 code=403 | 拦截器提示；不执行成功分支 |
+| 记录不存在、状态不允许、审核值错误 | 当前 BusinessException 默认业务 code=500，HTTP 200 | 拦截器提示；不执行成功分支 |
+| 缺少必需字段或参数类型不合法 | HTTP 422 | 响应错误分支提示，Promise 拒绝 |
+| 无有效登录凭证 | 通常 HTTP 401 | 按 request.js 的会话规则处理登录失效 |
+
+不要把表中业务 code=500 全部理解成服务器崩溃：当前业务异常类默认就是这个值。也不要根据 HTTP 200 就显示“审核成功”，必须检查正文中的 code。
+
+当前拦截器遇到一般业务错误时提示信息，但仍 return data；因此 `await auditReservationApi(...)` 可能正常返回一个 code 非 200 的对象，不一定进入 catch。两个页面写 `if (res.code === 200)` 是必要的。
+
+### 18.16 路由、菜单和代理分别做什么
+
+前端两个子路由位于 /manager 下：
+
+```js
+{
+  path: 'myreservation',
+  name: 'MyReservation',
+  component: () => import('@/views/MyReservation.vue')
+}
+```
+
+完整页面地址是 /manager/myreservation；管理员页对应 /manager/auditreservation。`() => import(...)` 表示导航需要组件时再加载它。
+
+Layout 的菜单 index 与完整页面路径对应，el-menu 的 router 属性让点击触发导航；外层布局中的 router-view 显示当前子页面。`:default-active="route.path"` 根据当前地址设置菜单选中项。
+
+前端菜单用 userInfo.role 控制显示，但当前 router.beforeEach 只检查是否有 token，没有管理员专属路由校验。因此普通用户直接输入审核页地址仍可能打开页面外壳；列表接口仍只返回本人数据，审核接口仍由后端拒绝。不能把“菜单不可见”讲成“页面地址绝对不可进入”。
+
+相反，管理员若手动进入 MyReservation 页面，共用列表接口仍按管理员身份返回全部用户记录；页面名不决定后端查询范围。
+
+Vite 的 /api 代理把 API 请求转发到后端 8000 端口；/manager/... 是前端页面路径，二者不是同一套路由。本次 vite.config.js 只修正了 /uploads 的注释，没有新增预约专用代理。
+
+### 18.17 创建预约有锁，为什么取消与审核还可能竞争
+
+前一轮 create_reservation 的事务锁只在调用那个创建流程时执行。新 cancel_reservation 和 audit_reservation 都是普通查询后检查，再修改、提交，没有行锁、版本号或带 status=0 条件的原子更新。
+
+从源码可推导出这样的交错风险：
+
+```text
+用户请求读取 status=0
+管理员请求也读取 status=0
+用户检查通过，提交 status=3
+管理员根据此前读到的 0 检查通过，提交 status=1
+结果：两边都可能提示成功，最后的写入覆盖前一个结果
+```
+
+两个管理员分别点击通过与拒绝也有同类风险。这是代码分析发现的并发边界，本轮未在真实 MySQL 上复现或完成修补。顺序执行时第二次会被拒绝，不等于同时执行也有同样保证。
+
+后续可选择一致的加锁流程，或者让数据库在同一条更新中判断旧状态。下面只是取消的 SQL 思路，**尚未写入业务源码**：
+
+```sql
+UPDATE reservation
+SET status = 3
+WHERE id = :reservation_id
+  AND user_id = :current_user_id
+  AND status = 0;
+```
+
+`:reservation_id` 等是绑定参数占位符，不是让用户把原始输入拼接进 SQL。更新条件同时限定记录、归属和原状态；检查受影响行数，只有成功匹配 1 条才返回操作成功。审核也需要相应的旧状态条件，并保留管理员依赖。
+
+完整改造还要处理未匹配时的反馈、commit/rollback、驱动的行数返回方式，以及与创建预约的锁顺序是否一致，不能只复制这条 SQL 就宣称并发问题全部解决。[SQLAlchemy 更新及匹配行数说明](https://docs.sqlalchemy.org/en/20/tutorial/data_update.html#getting-affected-row-count-from-update-delete)
+
+### 18.18 当前代码细节与建议改法
+
+以下均为阅读源码发现的待完善项，本轮仅修改文档。
+
+**列表参数和 loading。** 两个页面可参考下面的 load 改法，仍使用原有的 params.pageSize：
+
+```js
+const load = async () => {
+  loading.value = true
+  try {
+    const res = await getReservationPageList({
+      page: params.page,
+      page_size: params.pageSize,
+      status: params.status === '' ? undefined : (params.status ?? undefined)
+    })
+    if (res.code === 200) {
+      tableData.value = res.data?.list ?? []
+      total.value = res.data?.total ?? 0
+    }
+  } catch {
+    // 请求拦截器已提示失败；这里明确结束本次页面查询。
+  } finally {
+    loading.value = false
+  }
+}
+```
+
+这段建议明确映射 page_size，并把没有筛选条件的值处理为不传，同时保留合法的 0。不要写 `params.status || undefined`，那会把 0 也丢掉。
+
+如果允许快速连续查询，还需要防止旧响应覆盖新响应，并让 loading 表示最新请求的状态；上面仅演示参数和基础加载状态，不是所有请求竞争的完整解决方案。
+
+**Search 图标。** 两个新页面使用 `:icon="Search"`，但没有导入 Search。main.js 的 app.component 全局注册能支持 `<Search />` 组件标签，不会自动建立表达式变量 Search。可以在 script setup 中加入下面的导入，或者使用已注册组件名的适当写法：
+
+```js
+import { Search } from '@element-plus/icons-vue'
+```
+
+本轮 Vue 编译检查确认脚本没有 Search 绑定，但构建仍可通过；模板访问未定义的上下文属性不一定是编译错误。应在浏览器检查图标及控制台提示。
+
+**其他本轮边界。**
+
+| 项目 | 当前行为 | 后续处理方向 |
+| --- | --- | --- |
+| 筛选事件 | 同时绑定 change 和 clear 调用 handleSearch | 清空时检查是否重复发请求，保留足够的一套触发逻辑 |
+| 查询异常 | load 有 finally，但没有 catch | 明确处理被拒绝的 Promise，保留统一错误提示 |
+| 审核页标题 | 仍为“我的预约记录” | 改为与管理员用途一致的文案 |
+| 操作中的按钮 | 没有按行提交状态 | 防止连续点击，同时保留后端并发保护 |
+| 审核条件 | 只校验目标状态、记录存在和原状态 | 明确过期申请、资源停用/维修后的审核规则 |
+| 审核记录 | 只有状态变化，无专门审核人、理由字段 | 需要追溯时增加模型、迁移、请求与页面 |
+| 关联名称 | 显示当前资料名称 | 需要保留历史原名时明确快照方案 |
+| 预约规则 | 仍分开判断实验室/设备冲突，未用 quantity 分配名额 | 先确定业务规则，再改查询与测试 |
+
+日期有效性、零时长、基础数据和其他前轮遗留项继续见第 17.16 节。写出主要业务流程后，可以按这些明确边界逐项完善，不需要把“教程还需验证”理解成前面的代码白写了。
+
+### 18.19 如果从空目录复现这一模块，按什么顺序
+
+先完成前面章节的环境、用户认证、实验室设备模型、统一响应和第 16、17 节的创建预约。然后按下面顺序扩展：
+
+1. 画出第 18.2 节状态图，确定每个操作的调用者与允许的原状态。
+2. 保持 Reservation 表和三种关联模型一致，确认现有库已具备正确表名和外键。本轮新增查询与操作无需增加数据库字段。
+3. 写 ReservationResponse 和 AuditReservationRequest，明确展示字段与写入字段。
+4. 写 get_reservation_page_list：先限制数据范围，再加状态过滤、总数、排序和分页，最后转换响应模型并填入名称。
+5. 写取消和审核 service：逐项检查记录、归属或目标值、原状态，再更新并提交；并把并发保护列为实现要求。
+6. 写三个 API 路由并注册到已有预约路由中，分别使用 get_current_user、get_current_admin。
+7. 先用后端 /docs 检查请求和响应，再写 frontend/src/api/reservation.js，避免页面与接口参数各写一套名字。
+8. 写 MyReservation.vue，从列表显示开始，加筛选与分页，最后加确认取消和成功刷新。
+9. 写 AuditReservation.vue，复用查询方式，默认待审核，增加预约人、通过和拒绝。
+10. 在 router/index.js 加页面，再在 Layout 按角色加菜单；确认 router-view 正确显示子页面。
+11. 用第 18.20 节的三个账号完成正常和错误路径验收，记录真实结果。
+12. 在独立空目录和学习数据库中重新安装、配置并运行，验证自己可以不依赖已有虚拟环境、node_modules 和旧数据库复现项目。
+
+第 18.23 节保存当前代码作对照。复现时不应直接把“当前快照”当作没有边界问题的最终模板；建议修正的代码要自己实现并验证，随后更新对应快照与测试。
+
+### 18.20 三个账号的浏览器与接口验收清单
+
+以下清单尚未在本轮真实浏览器中执行。准备学生 A、学生 B、管理员 C，以及启用的实验室和正常设备。日期选未来有效日期，时段位于开放时间内。为了检查分页，至少准备 11 条满足同一筛选条件的记录，可使用不同不重叠时段或不同日期。
+
+| 检查项 | 操作 | 预期结果 |
+| --- | --- | --- |
+| 实验室申请 | A 提交整间实验室预约 | 新记录 status=0，type 显示实验室，设备列为占位符 |
+| 设备申请 | A 提交所属设备预约 | lab_name、equipment_name 与所选资源对应 |
+| 本人范围 | A、B 分别登录查看我的预约 | 两人各自只看到自己的记录 |
+| 管理员范围 | C 进入审核页 | 默认全部用户的待审核记录，显示预约人 |
+| 状态 0 | 选择待审核 | 不混入 1、2、3；确认 0 没被当作无条件 |
+| 清空筛选 | 清除状态选择 | 查看允许范围内全部状态；观察有无重复请求 |
+| 分页 | 查询超过一页的结果并翻页 | 总数、ID 顺序、每页结果正确；请求参数与后端一致 |
+| 关闭确认框 | A 点击取消后关闭确认框 | 无 PUT 取消请求，数据库状态不变 |
+| 本人取消 | A 确认取消自己的待审核记录 | 状态改为 3，记录保留，不再显示取消按钮 |
+| 越权取消 | B 或 C 调用 A 的取消接口 | code=403，记录不变；管理员也无替人取消特例 |
+| 审核通过 | C 通过一条待审核记录 | 状态改为 1；从默认待审核列表消失，可切换筛选查看 |
+| 审核拒绝 | C 拒绝另一条待审核记录 | 状态改为 2；历史记录保留 |
+| 普通用户审核 | A 直接调用 audit 接口 | code=403，状态不变 |
+| 不合法目标 | C 提交 status=0、3 或其他整数 | 业务拒绝，不改变记录 |
+| 不合法原状态 | 对 1、2、3 再次取消或审核 | 业务拒绝，不改变记录 |
+| 无此记录 | 使用不存在的预约 ID | 显示业务错误，不提示操作成功 |
+| 占用与释放 | 对 0/1 再约同资源重叠时段；对 2/3 重新申请 | 0/1 阻止；2/3 在其他条件满足时允许 |
+| 用户看到审核结果 | C 处理后 A 重新查询 | 状态更新；不期待当前代码自动实时推送 |
+| 接口失败 | 停止测试后端后查询/操作 | 显示错误，不误提示成功；检查加载与按钮状态 |
+| 同时操作 | 两个会话同时取消/审核或分别通过/拒绝 | 修补目标是只允许一次有效状态转换；当前不能保证 |
+
+边界测试应在学习数据中做。接口权限测试不能只用隐藏按钮证明，需要直接调用接口，检查业务 code 与数据库实际状态。
+
+### 18.21 本轮已经完成的检查与尚未覆盖的范围
+
+本轮只更新两份文档，未修改业务代码、迁移数据库或更改现有账号。
+
+已完成检查：
+
+- 对 backend/app 下 Python 源码进行语法解析，检查通过。
+- 从实际源码提取数据库模型类和预约业务函数，用内存 SQLite 创建临时表，不加载项目的真实数据库配置。检查普通用户与管理员查询范围、状态 0、分页顺序及总数、名称字段、越权取消、不同原状态、合法/非法审核值、记录保留，以及取消/拒绝后重新申请、通过后仍冲突。连同对 API 依赖的静态核对，共 33 个断言通过。
+- 编译两个新 Vue 单文件组件，并提取实际页面函数，模拟 API 和确认框，检查默认筛选、列表赋值、确认成功、关闭确认框、业务失败与网络失败等行为，共 18 组场景检查通过。其中也验证了 pageSize 未映射、loading 始终未开启、Search 没有脚本绑定的当前事实；“检查通过”不意味着这些问题已修复。
+- 在 frontend 运行 npm.cmd run build，构建通过，仍有大于 500 kB 的包体积提示。
+
+这些临时检查没有保存为新增测试文件。它们不包含真正的 HTTP 登录与鉴权请求、真实浏览器交互、MySQL/InnoDB 锁竞争、旧库迁移，也不证明界面图标和加载提示已经正确。审核权限的依赖绑定核对与 service 的业务校验检查，也不能代替完整 HTTP 权限测试。
+
+当前工作区缺少原 backend/tests、frontend/tests 和 docs 审查文件。第 17 节的 19 项后端与 6 项登录测试是历史结果，不能写成“本轮重新运行全部通过”。package.json 虽仍有 test 脚本，恢复测试文件前应检查实际发现的用例数。
+
+本地可重复运行的基础检查命令如下，分别在对应目录执行：
+
+```powershell
+# backend 目录：只检查 Python 语法，不是业务回归测试
+.\.venv\Scripts\python.exe -m compileall -q app
+```
+
+```powershell
+# frontend 目录：检查能否构建，不等于浏览器联调通过
+npm.cmd run build
+```
+
+后续应把这些业务场景保存为可维护的测试文件，并完成真实浏览器清单。只有在空目录完整复现并验收后，才能完成本笔记最初约定的“从零复现整个项目”目标。
+
+### 18.22 复习问题：检查自己是否能重新写出来
+
+| 问题 | 应能说明的重点 |
+| --- | --- |
+| 为什么列表不用让前端传 user_id？ | 后端从认证用户决定数据范围，普通用户不能自己选择查询别人 |
+| 为什么 status=0 必须用 is not None 判断？ | 0 是合法筛选值，同时也是 Python 假值 |
+| lab_name 来自哪张表，在哪里赋值？ | labs 的 name，经 item.lab 取得，再写入 ReservationResponse |
+| prop="lab_name" 是否会自己发请求？ | 不会；它只读取表格行对象中的字段 |
+| model_validate 与 model_dump 的方向？ | 输入对象建立模型；模型转换为字典 |
+| 为什么管理员审核后行消失？ | 默认筛选待审核，重新查询后已审核记录不再匹配 |
+| 为什么取消后的历史仍不能随意删除？ | 时段占用和历史关联保护是两种不同规则 |
+| 隐藏审核菜单是否足以保护接口？ | 不足；后端 get_current_admin 必须独立执行 |
+| 为什么 pageSize=10 看似能分页？ | 后端忽略这个未声明名字，刚好使用 page_size 默认 10 |
+| 创建预约有锁，是否保护了审核？ | 没有；不同函数必须各自保证所需的事务与状态约束 |
+| 构建通过是否说明本轮业务全部验收？ | 不说明；还需真实 HTTP、数据库并发、浏览器与空环境复现 |
+
+### 18.23 本章相关代码快照
+
+以下按 2026-10-21 当前文件原样保存，便于与前面的分步讲解对照。代码中保留了第 18.18 节标明的待完善点；第 16.20 节的预约创建入口、公共弹窗及 Reservation 模型继续作为前置内容。不要用旧版 reservation service 覆盖本章新增的查询与操作函数。
+
+#### 18.23.1 backend/app/schemas/reservation.py
+
+```python
+from datetime import datetime
+from pydantic import BaseModel, ConfigDict, field_validator
+
+
+class ReservationCreateRequest(BaseModel):
+    lab_id: int
+    equipment_id: int | None = None
+    date: str
+    start_time: str
+    end_time: str
+    remark: str | None = None
+
+    @field_validator("start_time", "end_time")
+    @classmethod
+    def normalize_time(cls, value: str) -> str:
+        try:
+            # 接受 9:00 等输入，统一为 09:00 后再交给业务层。
+            return datetime.strptime(value, "%H:%M").strftime("%H:%M")
+        except ValueError:
+            raise ValueError("时间格式应为 HH:MM, 例如 09:00") from None
+
+
+class ReservationResponse(BaseModel):
+    id: int
+    user_id: int
+    user_name: str | None = None
+    lab_id: int
+    lab_name: str | None = None
+    equipment_id: int | None = None
+    equipment_name: str | None = None
+    type: str | None = None
+    date: str
+    start_time: str
+    end_time: str
+    remark: str | None = None
+    status: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AuditReservationRequest(BaseModel):
+    status: int  # 1 or 2
+```
+
+#### 18.23.2 backend/app/services/reservation_service.py
+
+```python
+from datetime import datetime
+from time import sleep
+from sqlalchemy import func, update
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import Session
+from app.common.exceptions import BusinessException
+from app.common.response import PageResponse
+from app.models.equipment import Equipment
+from app.models.lab import Lab
+from app.models.reservation import Reservation
+from app.models.user import User
+from app.schemas.reservation import ReservationCreateRequest, ReservationResponse
+
+
+def get_reservation_page_list(
+    db: Session,
+    current_user: User,
+    page: int,
+    page_size: int,
+    status: int | None = None,
+):
+    """查询预约记录"""
+    query = db.query(Reservation)
+    if current_user.role != "admin":
+        query = query.filter(Reservation.user_id == current_user.id)
+    if status is not None:
+        query = query.filter(Reservation.status == status)
+    total = query.count()
+    items = (
+        query.order_by(Reservation.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    result = []
+    for item in items:
+        res = ReservationResponse.model_validate(item)
+        res.user_name = item.user.name if item.user else None
+        res.lab_name = item.lab.name if item.lab else None
+        res.equipment_name = item.equipment.name if item.equipment else None
+        res.type = "设备" if item.equipment_id else "实验室"
+        result.append(res)
+    return PageResponse(list=result, total=total)
+
+
+def create_reservation(db: Session, current_user: User, data: ReservationCreateRequest):
+    for attempt in range(3):
+        try:
+            _create_reservation(db, current_user, data)
+            return
+        except OperationalError as exc:
+            db.rollback()
+            error_code = exc.orig.args[0] if exc.orig.args else None
+            # InnoDB 死锁需要重试整个事务，每次仍重新持锁并检查冲突。
+            if error_code == 1213 and attempt < 2:
+                sleep(0.01 * (attempt + 1))
+                continue
+            if error_code in (1205, 1213):
+                raise BusinessException(
+                    message="预约资源正忙，请稍后重试", code=409
+                ) from exc
+            raise
+        except Exception:
+            # 包括业务校验失败在内，及时释放本次事务持有的资源锁。
+            db.rollback()
+            raise
+
+
+def _create_reservation(
+    db: Session, current_user: User, data: ReservationCreateRequest
+):
+    now = datetime.now()
+    current_date = now.strftime("%Y-%m-%d")
+    current_time = now.time().replace(second=0, microsecond=0)
+    start_time = datetime.strptime(data.start_time, "%H:%M").time()
+    end_time = datetime.strptime(data.end_time, "%H:%M").time()
+    if data.date < current_date:
+        raise BusinessException(message="预约日期不能小于当天的日期")
+    if end_time < start_time:
+        raise BusinessException(message="预约的结束时间不能小于预约的开始时间")
+    if data.date == current_date and start_time < current_time:
+        raise BusinessException(message="当天预约的开始时间不能小于当前的时间")
+    # 先锁定稳定存在的实验室行，再检查冲突并提交，避免空时段无行可锁。
+    # 无值变更的 UPDATE 在 MySQL/InnoDB 和 SQLite 中均能持有写锁；
+    # 显式保留 update_time，避免预约操作修改实验室的更新时间。
+    db.execute(
+        update(Lab)
+        .where(Lab.id == data.lab_id)
+        .values(id=Lab.id, update_time=Lab.update_time)
+        .execution_options(synchronize_session=False)
+    )
+    lab = (
+        db.query(Lab)
+        .filter(Lab.id == data.lab_id)
+        .populate_existing()
+        .with_for_update()
+        .first()
+    )
+    if not lab:
+        raise BusinessException(message="实验室不存在")
+    if lab.status != 1:
+        raise BusinessException(message="实验室已关闭")
+    if lab.open_time and start_time < datetime.strptime(lab.open_time, "%H:%M").time():
+        raise BusinessException(message="预约时间不能早于实验室的开放时间")
+    if lab.close_time and end_time > datetime.strptime(lab.close_time, "%H:%M").time():
+        raise BusinessException(message="预约时间不能晚于实验室的关闭时间")
+
+    # equipment_id 不为空 则表示这次是预约的实验室设备
+    if data.equipment_id is not None:
+        equipment = (
+            db.query(Equipment)
+            .filter(Equipment.id == data.equipment_id)
+            .populate_existing()
+            .with_for_update()
+            .first()
+        )
+        if not equipment:
+            raise BusinessException(message="实验室设备不存在")
+        if equipment.lab_id != lab.id:
+            raise BusinessException(message="该设备不属于所选实验室", code=400)
+        if equipment.status != 1:
+            raise BusinessException(message="实验室设备正在维修")
+
+    # 实验室或者设备是否是可预约的状态
+    query = db.query(Reservation).filter(
+        Reservation.date == data.date,
+        Reservation.status.in_([0, 1]),  # 0表示待审核 1已通过
+        func.time(Reservation.start_time) < end_time.strftime("%H:%M:%S"),
+        func.time(Reservation.end_time) > start_time.strftime("%H:%M:%S"),
+    )
+    if data.equipment_id is not None:
+        query = query.filter(
+            Reservation.equipment_id == data.equipment_id
+        )  # 预约实验室设备
+    else:
+        query = query.filter(
+            Reservation.lab_id == lab.id, Reservation.equipment_id.is_(None)
+        )  # 只预约实验室
+    # InnoDB 默认 REPEATABLE READ 下使用当前读，避免复用认证查询建立的旧快照。
+    if query.with_for_update().first():
+        raise BusinessException(message="该时段已预约", code=409)
+
+    reservation_model = Reservation(
+        user_id=current_user.id,
+        lab_id=data.lab_id,
+        equipment_id=data.equipment_id,
+        date=data.date,
+        start_time=data.start_time,
+        end_time=data.end_time,
+        remark=data.remark,
+        status=0,
+    )
+    db.add(reservation_model)
+    db.commit()
+
+
+def cancel_reservation(db: Session, current_user: User, reservation_id: int):
+    item = db.query(Reservation).filter(Reservation.id == reservation_id).first()
+    if not item:
+        raise BusinessException(message="预约记录不存在")
+    if item.user_id != current_user.id:
+        raise BusinessException(message="无权限", code=403)
+    if item.status != 0:
+        raise BusinessException(message="当前状态无法取消")
+    item.status = 3
+    db.commit()
+
+
+def audit_reservation(db: Session, reservation_id: int, status: int):
+    """管理员审核预约"""
+    if status not in [1, 2]:
+        raise BusinessException(message="审核状态错误")
+    item = db.query(Reservation).filter(Reservation.id == reservation_id).first()
+    if not item:
+        raise BusinessException(message="预约记录不存在")
+    if item.status != 0:
+        raise BusinessException(message="当前状态不支持审核")
+    item.status = status
+    db.commit()
+```
+
+#### 18.23.3 backend/app/api/reservation.py
+
+```python
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from app.common.response import Response
+from app.database import get_db
+from app.dependencies.auth import get_current_admin, get_current_user
+from app.models.user import User
+from app.schemas.reservation import AuditReservationRequest, ReservationCreateRequest
+from app.services import reservation_service
+
+router = APIRouter(prefix="/reservation", tags=["预约服务接口"])
+
+
+@router.get("/list")
+def get_reservation_page_list(
+    page: int = 1,
+    page_size: int = 10,
+    status: int | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    res = reservation_service.get_reservation_page_list(
+        db=db, current_user=current_user, page=page, page_size=page_size, status=status
+    )
+    return Response.success(data=res)
+
+
+@router.post("")
+def create_reservation(
+    data: ReservationCreateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    reservation_service.create_reservation(data=data, current_user=current_user, db=db)
+    return Response.success()
+
+
+@router.put("/{reservation_id}/cancel")
+def cancel_reservation(
+    reservation_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    reservation_service.cancel_reservation(
+        reservation_id=reservation_id, current_user=current_user, db=db
+    )
+    return Response.success()
+
+
+@router.put("/{reservation_id}/audit")
+def audit_reservation(
+    reservation_id: int,
+    data: AuditReservationRequest,
+    current_user: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    reservation_service.audit_reservation(
+        reservation_id=reservation_id,
+        db=db,
+        status=data.status,
+    )
+    return Response.success()
+```
+
+#### 18.23.4 frontend/src/api/reservation.js
+
+```js
+import request from '@/utils/request'
+
+// 创建预约
+export function createReservationApi(data) {
+  return request({
+    url: '/api/reservation',
+    method: 'post',
+    data
+  })
+}
+
+// 查询预约记录
+export function getReservationPageList(params) {
+  return request({
+    url: '/api/reservation/list',
+    method: 'get',
+    params
+  })
+}
+
+// 取消预约
+export function cancelReservationApi(id) {
+  return request({
+    url: `/api/reservation/${id}/cancel`,
+    method: 'put'
+  })
+}
+
+// 审核预约
+export function auditReservationApi(id, status) {
+  return request({
+    url: `/api/reservation/${id}/audit`,
+    method: 'put',
+    data: { status }
+  })
+}
+```
+
+#### 18.23.5 frontend/src/views/MyReservation.vue
+
+```vue
+<template>
+  <div style="width: 60%">
+    <el-card>
+      <template #header>
+        <div style="font-size: 16px; font-weight: bold">
+          <span>我的预约记录</span>
+        </div>
+      </template>
+      <div style="margin-bottom: 10px">
+        <el-select
+          v-model="params.status"
+          placeholder=" 请选择状态"
+          clearable
+          style="width: 200px; margin-right: 8px"
+          @change="handleSearch"
+          @clear="handleSearch"
+        >
+          <el-option :value="0" label="待审核" />
+          <el-option :value="1" label="已通过" />
+          <el-option :value="2" label="已拒绝" />
+          <el-option :value="3" label="已取消" />
+        </el-select>
+        <el-button type="primary" :icon="Search" @click="handleSearch">查询</el-button>
+      </div>
+      <el-table
+        :header-cell-style="{ backgroundColor: '#fdf', color: '#333' }"
+        :data="tableData"
+        style="width: 100%"
+        v-loading="loading"
+      >
+        <el-table-column label="预约类型" width="80">
+          <template #default="{ row }">
+            <el-tag :type="row.type === '实验室' ? 'success' : 'primary'">{{ row.type }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="lab_name" label="实验室" width="200" />
+        <el-table-column label="设备" width="200">
+          <template #default="{ row }">
+            {{ row.equipment_name || '-' }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="date" label="日期" width="110" />
+        <el-table-column label="预约时段" width="130">
+          <template #default="{ row }">{{ row.start_time }} - {{ row.end_time }}</template>
+        </el-table-column>
+        <el-table-column prop="remark" label="备注" />
+        <el-table-column prop="status" label="预约状态" width="100">
+          <template #default="{ row }">
+            <el-tag :type="statusType(row.status)">
+              {{ statusText(row.status) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="100">
+          <template #default="{ row }">
+            <el-button v-if="row.status === 0" type="danger" text bg @click="handleCancel(row)"
+              >取消</el-button
+            >
+          </template>
+        </el-table-column>
+      </el-table>
+      <div style="margin-top: 10px; display: flex; justify-content: flex-end">
+        <el-pagination
+          v-model:current-page="params.page"
+          v-model:page-size="params.pageSize"
+          :total="total"
+          background
+          layout="total, prev, pager, next"
+          @current-change="load"
+        />
+      </div>
+    </el-card>
+  </div>
+</template>
+
+<script setup>
+import { ref, reactive, onMounted } from 'vue'
+import { cancelReservationApi, getReservationPageList } from '@/api/reservation'
+import { ElMessage, ElMessageBox } from 'element-plus'
+const statusType = (status) => {
+  return { 0: 'warning', 1: 'success', 2: 'danger', 3: 'info' }[status] || 'info'
+}
+
+const statusText = (status) => {
+  return { 0: '待审核', 1: '已通过', 2: '已拒绝', 3: '已取消' }[status] || '-'
+}
+const loading = ref(false)
+const tableData = ref([])
+const total = ref(0)
+const params = reactive({
+  page: 1,
+  pageSize: 10,
+  status: null
+})
+
+const load = async () => {
+  try {
+    const res = await getReservationPageList(params)
+    if (res.code === 200) {
+      tableData.value = res.data?.list
+      total.value = res.data?.total
+    }
+  } finally {
+    loading.value = false
+  }
+}
+
+const handleCancel = async (row) => {
+  try {
+    await ElMessageBox.confirm(`确认取消 [${row.lab_name}] 的预约?`, '确认取消', {
+      type: 'warning'
+    })
+    const res = await cancelReservationApi(row.id)
+    if (res.code === 200) {
+      ElMessage.success('取消预约成功')
+      await load()
+    }
+  } catch {
+    // 取消或关闭确认框无需处理，请求失败时由请求拦截器提示错误。
+  }
+}
+
+const handleSearch = () => {
+  params.page = 1
+  load()
+}
+
+onMounted(() => {
+  load()
+})
+</script>
+```
+
+#### 18.23.6 frontend/src/views/AuditReservation.vue
+
+```vue
+<template>
+  <div style="width: 60%">
+    <el-card>
+      <template #header>
+        <div style="font-size: 16px; font-weight: bold">
+          <span>我的预约记录</span>
+        </div>
+      </template>
+      <div style="margin-bottom: 10px">
+        <el-select
+          v-model="params.status"
+          placeholder=" 请选择状态"
+          clearable
+          style="width: 200px; margin-right: 8px"
+          @change="handleSearch"
+          @clear="handleSearch"
+        >
+          <el-option :value="0" label="待审核" />
+          <el-option :value="1" label="已通过" />
+          <el-option :value="2" label="已拒绝" />
+          <el-option :value="3" label="已取消" />
+        </el-select>
+        <el-button type="primary" :icon="Search" @click="handleSearch">查询</el-button>
+      </div>
+      <el-table
+        :header-cell-style="{ backgroundColor: '#fdf', color: '#333' }"
+        :data="tableData"
+        style="width: 100%"
+        v-loading="loading"
+      >
+        <el-table-column label="预约类型" width="80">
+          <template #default="{ row }">
+            <el-tag :type="row.type === '实验室' ? 'success' : 'primary'">{{ row.type }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="lab_name" label="实验室" width="200" />
+        <el-table-column label="设备" width="200">
+          <template #default="{ row }">
+            {{ row.equipment_name || '-' }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="date" label="日期" width="110" />
+        <el-table-column label="预约时段" width="130">
+          <template #default="{ row }">{{ row.start_time }} - {{ row.end_time }}</template>
+        </el-table-column>
+        <el-table-column prop="remark" label="备注" />
+        <el-table-column prop="user_name" label="预约人" width="100" />
+        <el-table-column prop="status" label="预约状态" width="100">
+          <template #default="{ row }">
+            <el-tag :type="statusType(row.status)">
+              {{ statusText(row.status) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="180">
+          <template #default="{ row }">
+            <template v-if="row.status === 0">
+              <el-button type="success" text bg @click="handleAudit(row, 1)">通过</el-button>
+              <el-button type="danger" text bg @click="handleAudit(row, 2)">拒绝</el-button>
+            </template>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div style="margin-top: 10px; display: flex; justify-content: flex-end">
+        <el-pagination
+          v-model:current-page="params.page"
+          v-model:page-size="params.pageSize"
+          :total="total"
+          background
+          layout="total, prev, pager, next"
+          @current-change="load"
+        />
+      </div>
+    </el-card>
+  </div>
+</template>
+
+<script setup>
+import { ref, reactive, onMounted } from 'vue'
+import { auditReservationApi, getReservationPageList } from '@/api/reservation'
+import { ElMessage, ElMessageBox } from 'element-plus'
+const statusType = (status) => {
+  return { 0: 'warning', 1: 'success', 2: 'danger', 3: 'info' }[status] || 'info'
+}
+
+const statusText = (status) => {
+  return { 0: '待审核', 1: '已通过', 2: '已拒绝', 3: '已取消' }[status] || '-'
+}
+const loading = ref(false)
+const tableData = ref([])
+const total = ref(0)
+const params = reactive({
+  page: 1,
+  pageSize: 10,
+  status: 0
+})
+
+const load = async () => {
+  try {
+    const res = await getReservationPageList(params)
+    if (res.code === 200) {
+      tableData.value = res.data?.list
+      total.value = res.data?.total
+    }
+  } finally {
+    loading.value = false
+  }
+}
+
+const handleAudit = async (row, status) => {
+  try {
+    const action = status === 1 ? '通过' : '拒绝'
+    await ElMessageBox.confirm(`确认 ${action} [${row.lab_name}] 的审核?`, '审核', {
+      type: 'warning'
+    })
+    const res = await auditReservationApi(row.id, status)
+    if (res.code === 200) {
+      ElMessage.success(`审核${action}`)
+      await load()
+    }
+  } catch {
+    // 取消或关闭确认框无需处理，请求失败时由请求拦截器提示错误。
+  }
+}
+
+const handleSearch = () => {
+  params.page = 1
+  load()
+}
+
+onMounted(() => {
+  load()
+})
+</script>
+```
+
+#### 18.23.7 frontend/src/router/index.js
+
+```js
+import { getToken } from '@/utils/auth'
+import { createRouter, createWebHistory } from 'vue-router'
+
+const router = createRouter({
+  history: createWebHistory(import.meta.env.BASE_URL),
+  routes: [
+    { path: '/', redirect: '/manager/home' },
+    {
+      path: '/manager',
+      name: 'Layout',
+      component: () => import('@/layouts/Layout.vue'),
+      children: [
+        {
+          path: 'home',
+          name: 'Home',
+          component: () => import('@/views/Home.vue')
+        },
+        {
+          path: 'lab',
+          name: 'Lab',
+          component: () => import('@/views/Lab.vue')
+        },
+        {
+          path: 'equipment',
+          name: 'Equipment',
+          component: () => import('@/views/Equipment.vue')
+        },
+        {
+          path: 'user',
+          name: 'User',
+          component: () => import('@/views/User.vue')
+        },
+        {
+          path: 'profile',
+          name: 'Profile',
+          component: () => import('@/views/Profile.vue')
+        },
+        {
+          path: 'password',
+          name: 'Password',
+          component: () => import('@/views/Password.vue')
+        },
+        {
+          path: 'lablist',
+          name: 'LabList',
+          component: () => import('@/views/LabList.vue')
+        },
+        {
+          path: 'labequipment',
+          name: 'LabEquipment',
+          component: () => import('@/views/LabEquipment.vue')
+        },
+        {
+          path: 'myreservation',
+          name: 'MyReservation',
+          component: () => import('@/views/MyReservation.vue')
+        },
+        {
+          path: 'auditreservation',
+          name: 'AuditReservation',
+          component: () => import('@/views/AuditReservation.vue')
+        }
+      ]
+    },
+    {
+      path: '/login',
+      name: 'Login',
+      component: () => import('@/views/Login.vue')
+    },
+    {
+      path: '/register',
+      name: 'Register',
+      component: () => import('@/views/Register.vue')
+    }
+  ]
+})
+
+// 路由守卫
+router.beforeEach((to, from) => {
+  const token = getToken()
+  if (to.path === '/login' || to.path === '/register') {
+    return true
+  } else {
+    return token ? true : '/login'
+  }
+})
+
+export default router
+```
+
+#### 18.23.8 frontend/src/layouts/Layout.vue
+
+```vue
+<template>
+  <div>
+    <el-container style="min-height: 100vh">
+      <el-header
+        style="
+          display: flex;
+          align-items: center;
+          border-bottom: 1px solid #ddd;
+          background-color: #fff;
+        "
+      >
+        <div style="display: flex; align-items: center; font-size: 24px; font-weight: bold">
+          <img style="width: 40px" src="@/assets/imgs/logo.png" alt="" />
+          <div style="margin-left: 5px">智能实验室预约系统</div>
+        </div>
+        <div style="margin-left: auto">
+          <el-dropdown @command="handleCommand">
+            <div style="display: flex; align-items: center; margin-right: 20px; cursor: pointer">
+              <img :src="userInfo?.avatar" alt="" style="width: 30px; border-radius: 50%" />
+              <div style="margin-left: 3px">
+                {{ userInfo?.name || userInfo?.username || '用户' }}
+              </div>
+            </div>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="profile">个人信息</el-dropdown-item>
+                <el-dropdown-item command="password">修改密码</el-dropdown-item>
+                <el-dropdown-item command="logout">退出登录</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
+      </el-header>
+      <el-container>
+        <el-aside width="220px">
+          <el-menu router :default-active="route.path" style="height: 100%">
+            <el-menu-item index="/manager/home">
+              <el-icon><Menu /></el-icon>
+              <span>系统首页</span>
+            </el-menu-item>
+
+            <el-menu-item index="/manager/auditreservation" v-if="userInfo?.role === 'admin'">
+              <el-icon><DocumentChecked /></el-icon>
+              <span>预约审核管理</span>
+            </el-menu-item>
+
+            <el-menu-item index="/manager/lab" v-if="userInfo?.role === 'admin'">
+              <el-icon><House /></el-icon>
+              <span>实验室管理</span>
+            </el-menu-item>
+
+            <el-menu-item index="/manager/equipment" v-if="userInfo?.role === 'admin'">
+              <el-icon><Setting /></el-icon>
+              <span>设备列表管理</span>
+            </el-menu-item>
+
+            <el-menu-item index="/manager/user" v-if="userInfo?.role === 'admin'">
+              <el-icon><User /></el-icon>
+              <span>用户管理</span>
+            </el-menu-item>
+
+            <el-menu-item index="/manager/lablist" v-if="userInfo?.role === 'student'">
+              <el-icon><House /></el-icon>
+              <span>实验室列表</span>
+            </el-menu-item>
+
+            <el-menu-item index="/manager/myreservation" v-if="userInfo?.role === 'student'">
+              <el-icon><Tickets /></el-icon>
+              <span>我的预约</span>
+            </el-menu-item>
+          </el-menu>
+        </el-aside>
+
+        <el-main>
+          <router-view />
+        </el-main>
+      </el-container>
+    </el-container>
+  </div>
+</template>
+
+<script setup>
+import { Menu, House, Setting, User, Tickets, DocumentChecked } from '@element-plus/icons-vue'
+import { useRoute, useRouter } from 'vue-router'
+import { logout } from '@/utils/auth'
+import { useUser } from '@/utils/user'
+const router = useRouter()
+const route = useRoute()
+const { userInfo } = useUser()
+
+const handleLogout = () => {
+  logout()
+  router.push('/login')
+}
+
+const goPerson = () => {
+  router.push('/manager/profile')
+}
+
+const handleCommand = (command) => {
+  if (command === 'profile') {
+    router.push('/manager/profile')
+  } else if (command === 'password') {
+    router.push('/manager/password')
+  } else if (command === 'logout') {
+    logout()
+    router.push('/login')
+  }
+}
+</script>
+```
+
+#### 18.23.9 frontend/vite.config.js
+
+```js
+import { fileURLToPath, URL } from 'node:url'
+
+import { defineConfig } from 'vite'
+import vue from '@vitejs/plugin-vue'
+import vueDevTools from 'vite-plugin-vue-devtools'
+
+// https://vite.dev/config/
+export default defineConfig({
+  plugins: [vue(), vueDevTools()],
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url))
+    }
+  },
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8000', //  /api -> http://127.0.0.1:8000/api
+        changeOrigin: true
+      },
+      '/uploads': {
+        target: 'http://127.0.0.1:8000', //  /uploads -> http://127.0.0.1:8000/uploads
+        changeOrigin: true
+      }
+    }
+  }
+})
+```
+
+---
+
+<a id="19-code-flow"></a>
+
+## 19. 整项目执行路线：从网页操作追踪到数据库，再回到页面
+
+更新时间：2026-10-21。本章专门回答：“我在网页上做一个操作，到底是哪些文件中的哪几个函数先后工作，数据怎样传过去，又怎样回来？”
+
+第 1～18 章侧重模块内部的设计与写法，本章把模块串起来。建议先看总路线，再把“审核通过”完整跟一遍，最后对照其他功能。README 的第 15 节提供图形速查；这里保留详细的定位方法、参数、返回值和容易混淆的地方。
+
+本章速查：[审核通过的十二步](#19-audit-flow) · [账号与个人资料](#19-account-flow) · [用户和资源管理](#19-management-flow) · [学生浏览与预约](#19-student-flow) · [失败返回路线](#19-error-flow) · [实际跟踪方法](#19-debug-flow)。
+
+### 19.1 先区分四种不同的“流通”
+
+| 现象 | 当前项目中的例子 | 实际发生的事情 |
+| --- | --- | --- |
+| 导入模块 | import { auditReservationApi } from '@/api/reservation' | 取得另一个模块导出的函数；这一行不等于发审核请求 |
+| 调用函数 | auditReservationApi(row.id, 1) | JavaScript 调用这个函数，传入 ID 和审核状态 |
+| HTTP 请求 | PUT /api/reservation/42/audit | 浏览器把方法、地址、请求头和 JSON 发给后端，由后端匹配接口 |
+| 页面导航 | router.push('/manager/myreservation') | Vue Router 改变当前地址，显示对应页面组件 |
+
+你说的“从 AuditReservation.vue 跳到 reservation.js”，在代码层面通常属于**函数调用**。管理员点击“通过”时，页面地址保持不变；随后发送 HTTP 请求，操作成功后重新查询列表。
+
+也要区分“打开一个文件阅读”和“程序执行一个函数”：IDE 的转到定义只帮助你找到代码，运行中的程序并不会打开编辑器里的文件。
+
+下面使用“完整文件路径 + 函数名/模板定位词”。在 VS Code 中按 Ctrl+P 输入路径打开文件，再搜索函数名。相同名字可能出现在不同目录，例如前后端都有 auth、user、reservation，因此阅读时要看完整路径。
+
+### 19.2 启动阶段：两套程序分别准备好
+
+**前端启动路线。**
+
+```text
+frontend/package.json 中的 dev 脚本
+  → npm run dev 启动 Vite
+  → Vite 读取 frontend/vite.config.js 和对应模式的环境配置
+  → 浏览器打开前端地址，取得 frontend/index.html
+  → <script type="module" src="/src/main.js">
+  → frontend/src/main.js
+      createApp(App)
+      app.use(router)
+      app.use(ElementPlus, ...)
+      注册图标组件
+      app.mount('#app')
+  → frontend/src/App.vue 的 <router-view />
+  → frontend/src/router/index.js 匹配当前地址
+  → /login 显示 Login.vue
+     /manager/... 显示 Layout.vue，再由里面的 <router-view /> 显示子页面
+```
+
+index.html 的 `<div id="app"></div>` 是 Vue 挂载界面的位置。main.js 负责建立应用，不包含每个业务按钮的处理逻辑；具体业务在 views 下的组件中。
+
+router/index.js 的 beforeEach 先用 utils/auth.js.getToken() 读取本地 token。登录页和注册页直接放行，其他页面没有 token 就转到 /login。这里仅判断本地是否存在 token；token 是否真实有效，还需要后端接口验证。
+
+用户进入 /manager/home 后，Home.vue 从 useUser() 读取 userInfo 显示欢迎语。当前 Home.vue 没有在加载时重新请求个人信息，不要为它画出不存在的首页查询接口。
+
+**后端启动路线。**
+
+```text
+在 backend 目录运行 uvicorn app.main:app
+  → 导入 backend/app/main.py，取得名为 app 的 FastAPI 对象
+  → 导入链准备配置、数据库、模型和接口
+      config.py：Settings() 取得数据库/JWT 配置，准备 uploads 目录
+      database.py：create_engine(settings.DATABASE_URL)、SessionLocal、Base
+      models/*.py：注册表、字段与关联关系
+      api/__init__.py：建立 /api 总路由，include_router 各功能路由
+  → main.py：Base.metadata.create_all(bind=engine)
+  → main.py：建立 app，注册中间件、总路由、异常处理器、/uploads 静态目录
+  → Uvicorn 接收 HTTP 请求，交给这个 app
+```
+
+这是依赖关系的梳理，不是把互相导入的文件硬排成每次都相同的逐行清单。Python 在导入时执行模块顶层代码；后续每次请求不会重新执行整份 main.py，也不会每次都重新创建表。
+
+`@router.put(...)` 等装饰器把“方法和路径对应哪个函数”登记到路由中。登记时不会替用户进行一次审核，真正收到匹配请求并完成参数、依赖处理后，才调用对应接口函数。
+
+数据库模型定义也不是数据库里的一条数据：models/reservation.py 描述表结构，而真正的预约记录由 create_reservation 等运行时业务函数写入。
+
+### 19.3 请求阶段：正向发送与反向返回
+
+```mermaid
+flowchart TD
+    U["用户操作 / 页面挂载"] --> V["views/*.vue：事件函数 / load"]
+    V --> A["frontend/src/api/*.js：构造请求"]
+    A --> R["utils/request.js：请求拦截器"]
+    R --> H["HTTP：方法、URL、头、查询参数或请求体"]
+    H --> P["开发环境 /api 代理 → FastAPI"]
+    P --> D["schemas 校验；按接口声明解析 dependencies 与 get_db"]
+    D --> API["backend/app/api/*.py：接口函数"]
+    API --> S["services/*_service.py：业务判断"]
+    S --> DB[(数据库)]
+    DB --> S
+    S --> O["接口 Response.success → JSON"]
+    O --> I["request.js：响应拦截器"]
+    I --> V2["await 取得结果 → 更新页面变量"]
+    V2 --> SHOW["Vue 更新表格、表单、菜单或提示"]
+    D -.失败.-> E["common/exceptions.py → 错误响应"]
+    S -.失败.-> E
+    E --> I
+```
+
+这张图是大多数业务接口的通路。两个明确的例外是：GET /api/user/me 直接使用认证依赖取得的用户；POST /api/files/upload 在接口函数内写磁盘，没有 files_service，也没有文件数据库表。
+
+在任何具体功能中，都可以先问六个问题：触发点是什么、调用哪个前端 API、发什么 HTTP、进入哪个后端函数、改什么数据、页面如何接住结果。下面逐个回答。
+
+<a id="19-audit-flow"></a>
+
+### 19.4 完整例子：管理员点击某条预约的“通过”
+
+假设管理员已经登录，表格中有一条 `id=42、status=0` 的预约。42 只是说明流程的示例 ID。
+
+#### 第一步：先有列表数据，按钮才有 row
+
+打开 [frontend/src/views/AuditReservation.vue](frontend/src/views/AuditReservation.vue)，定位 onMounted 和 load：
+
+```js
+onMounted(() => {
+  load()
+})
+```
+
+load 调用 getReservationPageList(params)，把返回列表赋给 tableData.value。模板里的 `<el-table :data="tableData">` 据此生成行；作用域插槽 `#default="{ row }"` 取得当前这一行。
+
+因此 row.id 来自此前列表接口的响应，不是点击按钮时凭空生成的数字。列表的查询、名称组装路线在第 18.6～18.9 节已经逐层解释。
+
+#### 第二步：按钮把当前行和目标状态交给页面函数
+
+同一文件中定位：
+
+```vue
+<el-button type="success" text bg @click="handleAudit(row, 1)">通过</el-button>
+```
+
+`@click` 把点击事件绑定到表达式。点击后相当于调用 `handleAudit(当前行对象, 1)`：第一个参数用于取得预约 ID 和提示名称，第二个参数 1 表示通过。按钮放在 `row.status === 0` 的条件模板里。
+
+#### 第三步：handleAudit 先确认，再调用导入的 API 函数
+
+页面 script setup 中有：
+
+```js
+import { auditReservationApi, getReservationPageList } from '@/api/reservation'
+```
+
+vite.config.js 把 @ 配置为 frontend/src 的别名，所以这个导入指向 [frontend/src/api/reservation.js](frontend/src/api/reservation.js)。花括号里的名字需要与该文件的具名导出对应。
+
+页面的实际函数：
+
+```js
+const handleAudit = async (row, status) => {
+  try {
+    const action = status === 1 ? '通过' : '拒绝'
+    await ElMessageBox.confirm(`确认 ${action} [${row.lab_name}] 的审核?`, '审核', {
+      type: 'warning'
+    })
+    const res = await auditReservationApi(row.id, status)
+    if (res.code === 200) {
+      ElMessage.success(`审核${action}`)
+      await load()
+    }
+  } catch {
+    // 取消或关闭确认框无需处理，请求失败时由请求拦截器提示错误。
+  }
+}
+```
+
+执行到确认框的 await 时，当前函数等待用户选择。确认后继续调用 auditReservationApi；取消或关闭确认框会进入 catch，这次不会发出审核请求。
+
+`await auditReservationApi(...)` 会让这个异步函数等待结果，并不是让整个浏览器停止响应。下面先沿着这次调用向后端追踪，稍后再回到 `if (res.code === 200)`。
+
+#### 第四步：reservation.js 把参数变成 HTTP 请求配置
+
+在前端 API 文件中定位 auditReservationApi：
+
+```js
+export function auditReservationApi(id, status) {
+  return request({
+    url: `/api/reservation/${id}/audit`,
+    method: 'put',
+    data: { status }
+  })
+}
+```
+
+传入 42、1 后，配置的含义是：
+
+```text
+method = PUT
+url = /api/reservation/42/audit
+data = { status: 1 }
+```
+
+id 被放进 URL；status 被放进请求体。这里没有把整行 row、lab_name 或管理员角色一起发送给后端。`return` 把 request 返回的 Promise 交回调用者，页面才可以 await 它。
+
+#### 第五步：request 就是 request.js 导出的 service
+
+前端 API 文件顶部的：
+
+```js
+import request from '@/utils/request'
+```
+
+对应 [frontend/src/utils/request.js](frontend/src/utils/request.js) 最后的 `export default service`。request 是这里为默认导出起的本地名字，调用它就是调用配置好的 Axios 实例。
+
+请求拦截器从 [frontend/src/utils/auth.js](frontend/src/utils/auth.js) 的 getToken() 取得 localStorage 中的 token，放进 `config.headers.Authorization`，同时记录当前 `_authVersion`。最终的请求大致如下：
+
+```http
+PUT /api/reservation/42/audit
+Authorization: Bearer <当前登录token>
+Content-Type: application/json
+
+{"status": 1}
+```
+
+Axios 完成 JSON 序列化和网络发送。前端当前登录者的身份凭证在请求头里，而不是在 status 中。
+
+#### 第六步：开发代理把 HTTP 交给后端
+
+在 API 基地址留空并使用 Vite 开发代理的配置下，浏览器请求前端源的 /api/reservation/42/audit。[frontend/vite.config.js](frontend/vite.config.js) 的 /api 代理将它转发到：
+
+```text
+http://127.0.0.1:8000/api/reservation/42/audit
+```
+
+代理转发时保留 /api 前缀，当前没有 rewrite 删除它。Vite 不执行审核业务，数据库写入仍由 Python 后端完成。生产环境需要相应的 API 地址或反向代理，不能把 Vite 开发代理当作后端业务的一部分。
+
+#### 第七步：后端用“方法 + 路径”找到接口
+
+前缀的来源：
+
+```text
+backend/app/main.py：app.include_router(api)
+backend/app/api/__init__.py：APIRouter(prefix="/api")，注册 reservation_router
+backend/app/api/reservation.py：APIRouter(prefix="/reservation")
+同文件装饰器：@router.put("/{reservation_id}/audit")
+合成：PUT /api/reservation/{reservation_id}/audit
+```
+
+所以请求中的 42 对应路径参数 reservation_id。HTTP 不携带“请执行某个 Python 文件”的命令，FastAPI 按启动时注册的路由关系定位函数。
+
+#### 第八步：参数与依赖准备好，才执行接口函数体
+
+在 [backend/app/api/reservation.py](backend/app/api/reservation.py) 中定位 audit_reservation。它声明：
+
+```python
+def audit_reservation(
+    reservation_id: int,
+    data: AuditReservationRequest,
+    current_user: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    reservation_service.audit_reservation(
+        reservation_id=reservation_id,
+        db=db,
+        status=data.status,
+    )
+    return Response.success()
+```
+
+在进入函数体前，框架需要处理这些输入：
+
+| 参数 | 从哪里得到 | 在此例中的含义 |
+| --- | --- | --- |
+| reservation_id | URL 路径 | 整数 42 |
+| data | JSON 请求体，经 schemas/reservation.py 的 AuditReservationRequest 校验 | 模型对象，data.status 为 1 |
+| current_user | dependencies/auth.py 的 get_current_admin | 数据库查到且已验证权限的管理员 User 对象 |
+| db | database.py 的 get_db | 当前请求使用的 SQLAlchemy Session |
+
+这张表说明依赖关系，不规定这些输入严格按表格从上到下处理。关键是：校验或依赖出错时，不会继续执行正常的审核函数体。
+
+管理员依赖内部的路线是：
+
+```text
+OAuth2PasswordBearer 从 Authorization 提取 token
+  → get_current_user
+      utils/jwt.py：decode_access_token 校验签名和有效期，取得 user_id
+      db.query(User) 查询 users 表
+      检查用户存在、账号启用
+  → get_current_admin 检查 current_user.role == 'admin'
+  → 返回管理员 User 对象
+```
+
+get_db 通过 SessionLocal 创建会话，用 yield 提供给请求处理，最终 close 释放会话资源。它没有替每个写入操作自动 commit；提交在具体业务函数中。
+
+#### 第九步：API 函数调用 service 中的另一个同名函数
+
+接口函数执行：
+
+```python
+reservation_service.audit_reservation(
+    reservation_id=reservation_id,
+    db=db,
+    status=data.status,
+)
+```
+
+跳到 [backend/app/services/reservation_service.py](backend/app/services/reservation_service.py) 搜索 `def audit_reservation`。前面的 `reservation_service.` 指明从哪个模块取函数，因此它不会递归调用当前 API 文件里的同名函数。
+
+service 接收到的是 Python 对象和整数，不是浏览器的原始 HTTP 字节。实际业务代码是：
+
+```python
+def audit_reservation(db: Session, reservation_id: int, status: int):
+    """管理员审核预约"""
+    if status not in [1, 2]:
+        raise BusinessException(message="审核状态错误")
+    item = db.query(Reservation).filter(Reservation.id == reservation_id).first()
+    if not item:
+        raise BusinessException(message="预约记录不存在")
+    if item.status != 0:
+        raise BusinessException(message="当前状态不支持审核")
+    item.status = status
+    db.commit()
+```
+
+#### 第十步：ORM 把对象操作变成数据库操作
+
+Reservation 来自 [backend/app/models/reservation.py](backend/app/models/reservation.py)，映射到 reservation 表。按 ID 查询得到 item，当前 item.status 必须为 0；设置 item.status=1 后，commit 将修改提交。
+
+可以用下面的简化 SQL 理解意图，但它不是抓取到的完整 SQL 日志，实际更新还可能涉及 update_time：
+
+```sql
+SELECT * FROM reservation WHERE id = 42;
+UPDATE reservation SET status = 1 WHERE id = 42;
+COMMIT;
+```
+
+这个当前实现的更新没有把 status=0 放进数据库更新条件，校验发生在此前的 Python 读取上。因此这条路线讲的是正常顺序执行；同时取消与审核的竞争问题仍见第 18.17 节，不能因为出现 commit 就认为所有并发都已安全。
+
+#### 第十一步：结果沿着调用关系返回
+
+service 正常结束，没有显式返回详情；API 接着执行 Response.success()。[backend/app/common/response.py](backend/app/common/response.py) 构造响应对象，FastAPI 将它序列化为 JSON：
+
+```json
+{"code": 200, "message": "请求成功", "data": null}
+```
+
+HTTP 响应返回后进入前端 request.js 的响应拦截器。拦截器拿到的是 Axios Response，通过 `const data = res.data` 取出正文，最后 return data。
+
+于是 AuditReservation.vue 中这句 await 完成：
+
+```js
+const res = await auditReservationApi(row.id, status)
+```
+
+这里的 res 已经是上面 JSON 对应的 JavaScript 对象。因此用 res.code 判断业务结果，不需要再写 res.data.code。审核的 res.data 为 null，也不应该期待里面自动带回一整页最新预约。
+
+#### 第十二步：页面另发 GET，重新绘制列表
+
+审核函数成功分支执行 ElMessage.success，然后 await load。第二次请求路线是：
+
+```text
+AuditReservation.vue：load()
+  → frontend/src/api/reservation.js：getReservationPageList(params)
+  → request.js → GET /api/reservation/list
+  → backend/app/api/reservation.py：get_reservation_page_list
+  → backend/app/services/reservation_service.py：get_reservation_page_list
+  → 角色过滤、status 过滤、count、分页、名称组装
+  → PageResponse(list, total)
+  → Response.success(data=分页结果) → JSON → 响应拦截器
+  → 页面 tableData.value = res.data?.list
+         total.value = res.data?.total
+  → Vue 更新表格和分页总数
+```
+
+页面默认 status=0；ID 42 已变为 1，不再满足筛选，于是从待审核表格消失。它仍在数据库中，切换为“已通过”后可再查到。
+
+因此正常点击一次“通过”并确认，通常对应一个 PUT 审核请求和紧随其后的一个 GET 列表请求；初次进入页面的 GET 是更早的一次请求。没有 router.push，当前页面地址也没有因审核而改变。当前 pageSize/page_size 的差异仍保留，详见第 18.12 节。
+
+<a id="19-account-flow"></a>
+
+### 19.5 注册与登录：从账号表单到登录状态
+
+**注册的执行路线。**
+
+```text
+frontend/src/views/Register.vue
+  <el-form @submit.prevent="register">，提交按钮触发表单提交
+  → register() 检查 loadingValue、执行 formRef.validate()
+  → frontend/src/api/auth.js：registerApi(form)
+  → request.js → POST /api/auth/register
+  → backend/app/api/auth.py：register(data: RegisterRequest, db)
+  → backend/app/services/auth_service.py：register(db, data)
+      查 users.username 是否重复
+      utils/password.py：hash_password(data.password)
+      创建 User，role='student'
+      db.add → commit；唯一约束失败时 rollback 并给出业务错误
+  → Response.success(message='注册成功')
+  → request.js 返回正文
+  → Register.vue：提示成功 → router.push('/login')
+```
+
+`@submit.prevent` 的 prevent 阻止表单原生提交造成整页刷新，改由 register 函数负责发送 API 请求。页面的 confirmPassword 用来检查两次密码一致；RegisterRequest 没有这个字段，当前默认模型配置会忽略这个额外字段，数据库也不保存确认密码。
+
+**登录的执行路线。**
+
+```text
+frontend/src/views/Login.vue：表单 @submit.prevent="login"
+  → login() 校验 form
+  → frontend/src/api/auth.js：loginApi(form)
+  → request.js → POST /api/auth/login
+  → backend/app/api/auth.py：login，接收 LoginRequest
+  → backend/app/services/auth_service.py：login
+      查询 User → utils/password.py.verify_password
+      检查账号启用 → utils/jwt.py.create_access_token(user.id)
+      返回 LoginResponse(token, user=UserResponse)
+  → API：Response.success(message='登录成功', data=result)
+  → 页面取得 res.data.token、res.data.user
+  → frontend/src/utils/user.js：useUser().saveLoginData(res.data)
+      utils/auth.js.setToken → localStorage 保存 token，增加 authVersion
+      utils/auth.js.setUserInfo → localStorage 保存用户 JSON
+      userInfo.value = data.user → 更新共享响应式状态
+  → Login.vue：router.replace('/manager/home')，检查导航结果
+  → Layout.vue 显示角色菜单，Home.vue 显示欢迎信息
+```
+
+登录这一步才有页面导航；审核请求成功后的 load 则只有重新请求数据。两者都调用了后端，但最终页面动作不同。
+
+token 和用户 JSON 都由前端保存；后端没有因为 saveLoginData 而再次写数据库。后续接口身份检查会验证 token 并重新查询 users，所以浏览器里显示的角色不能代替后端权限判断。
+
+### 19.6 个人资料查询、修改与共享显示
+
+从 Layout.vue 的下拉菜单选择“个人信息”，先触发 `@command="handleCommand"`，handleCommand 收到 profile，调用 router.push('/manager/profile')，路由显示 Profile.vue。
+
+**查询时：**
+
+```text
+frontend/src/views/Profile.vue：onMounted → loadUserInfo()
+  → frontend/src/api/user.js：getUserInfo()
+  → GET /api/user/me
+  → backend/app/dependencies/auth.py：get_current_user 查询并验证用户
+  → backend/app/api/user.py：get_user_info(current_user)
+      UserResponse.model_validate(current_user)
+      Response.success(data=用户响应模型)
+  → request.js → Profile.vue
+      Object.assign(form, res.data)
+  → v-model 绑定的输入框显示用户资料
+```
+
+这里没有调用 user_service.get_user_info。虽然该 service 函数存在，当前 API 选择直接转换 current_user。画执行路线必须沿调用点核对，不能因为文件中有某函数就把它放到路线里。
+
+另一个同名函数要区分：`frontend/src/api/user.js.getUserInfo()` 发 HTTP 查询；`frontend/src/utils/auth.js.getUserInfo()` 只读取 localStorage。Profile 使用的是前者，useUser 初始化共享状态时使用的是后者。
+
+**保存时：**
+
+```text
+Profile.vue：表单 @submit.prevent="handleSubmit"
+  → handleSubmit 校验表单 → api/user.js.updateUserInfo(form)
+  → PUT /api/user/me
+  → api/user.py.update_user_info，参数为 UserUpdateRequest
+  → user_service.py.update_user_info(db, current_user, data)
+      model_dump(exclude_none=True, exclude={'role', 'status'})
+      setattr 更新允许字段 → commit → refresh
+      返回 UserResponse
+  → Response.success(data=res) → request.js → Profile.vue
+  → useUser().updateUser(res.data)
+      setUserInfo 更新 localStorage
+      userInfo.value 更新共享响应式对象
+  → Layout.vue 的头像/名称及 Home.vue 的欢迎语随状态更新
+```
+
+个人资料里的用户名与角色显示并不意味着可以通过这个接口修改它们。username 不在 UserUpdateRequest 中，role/status 又被个人资料 service 排除。管理员更新他人的信息走另一个接口，见第 19.9 节。
+
+### 19.7 图片：选择文件、上传、保存地址和读取图片
+
+头像在 Profile.vue，实验室图片在 Lab.vue，设备图片在 Equipment.vue。这三个页面都连接到相同的上传 API，但业务字段不同。
+
+| 阶段 | 位置与定位词 | 数据变化 |
+| --- | --- | --- |
+| 选择 | 页面 el-upload 的 before-upload / beforeAvatarUpload | 浏览器 File 对象，检查图片类型和大小 |
+| 上传函数 | 页面 :http-request="handleFileUpload" | 从组件参数中取出 file |
+| 构造请求 | frontend/src/api/files.js：uploadFileApi | FormData.append('file', file) |
+| 后端接收 | backend/app/api/files.py：upload(file: UploadFile = File(...)) | Multipart 文件变成 UploadFile |
+| 保存磁盘 | 同一个 upload 函数 | 检查扩展名和大小，生成 disk_name，写入 UPLOAD_DIR |
+| 返回地址 | schemas/files.py 的 FileResponse，经 Response.success | data.url 为 /uploads/文件名 |
+| 页面预览 | handleFileUpload 成功分支 | Profile 写 form.avatar；Lab/Equipment 写 form.img |
+| 业务保存 | 页面另一次表单提交 | 把该 URL 放进个人资料、实验室或设备更新/创建请求 |
+| 展示图片 | img 的 src 等图片绑定 | 浏览器自行 GET /uploads/文件名，取得图片内容 |
+
+上传路线没有单独的 files_service，也没有把图片字节放入用户表。上传后，文件已经在磁盘上，但用户/资源资料尚未因这一步自动保存。必须继续点击表单保存，URL 才写进相应数据库字段。
+
+图片读取走的是：
+
+```text
+浏览器 <img src="/uploads/xxx.jpg">
+  → 开发环境 Vite 的 /uploads 代理
+  → backend/app/main.py 中 app.mount('/uploads', StaticFiles(...))
+  → 读取 backend/uploads/xxx.jpg
+  → 返回图片内容给浏览器
+```
+
+它不调用 uploadFileApi，也不进入 Axios 的响应拦截器。`/api/files/upload` 负责接收新文件，`/uploads/...` 负责读取已有文件，是两种独立的 HTTP 路线。当前上传接口未声明登录依赖，不能因前端使用了统一 request 就认为后端已校验登录。
+
+### 19.8 修改密码与退出登录
+
+**修改密码的路线。** 在 Layout.vue 的下拉菜单选择 password，handleCommand 导航到 /manager/password，显示 [frontend/src/views/Password.vue](frontend/src/views/Password.vue)。
+
+```text
+Password.vue：表单 @submit.prevent="handleSubmit"
+  → handleSubmit() 校验旧密码、新密码和确认密码
+  → frontend/src/api/user.js：updatePassword({
+        old_password: form.oldPassword,
+        new_password: form.newPassword
+    })
+  → request.js → PUT /api/user/password
+  → backend/app/api/user.py：update_password
+      PasswordUpdateRequest 解析请求体，get_current_user 验证登录
+  → backend/app/services/user_service.py：update_password
+      verify_password 检查旧密码
+      拒绝新旧密码相同
+      hash_password 生成新密码哈希
+      user.password = 新哈希 → commit → refresh
+  → Response.success() → 页面 res.code === 200
+  → utils/auth.js.logout() → router.push('/login')
+```
+
+这里前端控件字段是 oldPassword/newPassword，而接口字段是 old_password/new_password，映射发生在 handleSubmit 传参时，不是框架自动把所有驼峰名转换成下划线名。confirmPassword 只参与页面校验，没有放进这次请求体。
+
+**普通退出的路线。**
+
+```text
+Layout.vue：下拉菜单 command='logout'
+  → handleCommand('logout')
+  → frontend/src/utils/auth.js：logout()
+      removeToken()：删除 localStorage token，增加 authVersion
+      removeUserInfo()：删除 localStorage userInfo
+  → router.push('/login')
+```
+
+当前没有向后端发送 logout 请求，也没有服务端 token 撤销表。logout 本身只清理存储，没有直接把 utils/user.js 的共享 userInfo.value 设为 null；重新登录时 saveLoginData 会再更新它。不要把“清理 localStorage”“更新内存响应式变量”“使服务端旧凭证失效”画成同一个动作。
+
+<a id="19-management-flow"></a>
+
+### 19.9 管理员用户列表、创建、编辑与删除
+
+入口是 Layout.vue 的 /manager/user 菜单，页面为 [frontend/src/views/User.vue](frontend/src/views/User.vue)。下面 API 列的前端函数均在 [frontend/src/api/user.js](frontend/src/api/user.js)，后端接口均在 [backend/app/api/user.py](backend/app/api/user.py)，业务函数均在 [backend/app/services/user_service.py](backend/app/services/user_service.py)。
+
+| 网页触发点 → 页面函数 | 前端 API 函数 | HTTP | 后端接口函数 → service 函数 |
+| --- | --- | --- | --- |
+| onMounted、查询、翻页 → load；查询先由 handleSearch 重置页码 | getUserPageList | GET /api/user/list | get_user_list → get_user_page_list |
+| 新增按钮 → handleCreate；填完表单提交 → handleSave | createUserApi | POST /api/user | create_user → create_user |
+| 编辑按钮 → handleEdit(row)；提交 → handleSave | updateUserApi | PUT /api/user/{user_id} | update_user → update_user |
+| 删除按钮 → handleDelete(row)，确认后 | deleteUserApi | DELETE /api/user/{user_id} | delete_user → delete_user |
+
+**列表。** load 构造 `{ page, page_size: params.pageSize, keywords }`；后端服务按关键词查询 users，统计总数、排序和分页，再将每个 User 转为 UserResponse，返回 PageResponse。页面从 res.data.list、res.data.total 更新 tableData 和 total。所有用户管理接口都使用 get_current_admin。
+
+**新增。** handleCreate 调用 resetForm、打开 dialogVisible，再清除校验提示。这一步只是改页面变量；不会创建用户。真正点击表单提交时，handleSave 校验表单，把 `{ id, username, password, ...userData }` 解构出来，id 为空就调用 createUserApi。后端检查用户名、生成密码哈希、构造 User、commit，再返回不含密码哈希的 UserResponse。成功后页面关闭弹窗并 load 查询新列表。
+
+**编辑。** handleEdit(row) 用当前列表行回填 form，并不是调用单独的用户详情接口。handleSave 发现 id 存在，就调用 updateUserApi(id, userData)。这个分支不把 username、password 一起提交；后端 UserUpdateRequest 也没有这两个字段。管理员编辑用户与用户自己修改密码是两条不同路线。
+
+**删除。** handleDelete 先等待确认，再调用 deleteUserApi(row.id)。service 检查不能删除当前登录账号，并检查是否有预约历史；允许时 db.delete/commit，失败时抛业务异常。只有 code=200 才提示成功并 load，取消确认框则不发 DELETE。
+
+### 19.10 实验室管理：相同界面模式，换成实验室数据
+
+页面为 [frontend/src/views/Lab.vue](frontend/src/views/Lab.vue)，前端 API 为 [frontend/src/api/lab.js](frontend/src/api/lab.js)，后端入口为 [backend/app/api/lab.py](backend/app/api/lab.py)，业务层为 [backend/app/services/lab_service.py](backend/app/services/lab_service.py)。
+
+| 网页触发点 → 页面函数 | 前端 API 函数 | HTTP | 后端接口函数 → service 函数 |
+| --- | --- | --- | --- |
+| onMounted / handleSearch / 翻页 → load | getLabPageList | GET /api/lab/list | get_lab_list → get_lab_page_list |
+| handleCreate → 填写表单 → handleSave，无 id | createLabApi | POST /api/lab | create_lab → create_lab |
+| handleEdit(row) → handleSave，有 id | updateLabApi | PUT /api/lab/{lab_id} | update_lab → update_lab |
+| handleDelete(row) → 确认 | deleteLabApi | DELETE /api/lab/{lab_id} | delete_lab → delete_lab |
+
+handleSave 从 form 中取出 id，剩余字段构成 labData，包括名称、简介、图片地址、位置、容量、开放时间和状态。创建使用 LabCreateRequest，修改使用 LabUpdateRequest；后端服务使用 Lab ORM 操作 labs 表。
+
+保存成功的回程：`LabResponse → Response.success → request.js → Lab.vue 关闭弹窗 → load → tableData/total → 表格`。删除成功没有返回新列表，仍需 load 另查。删除前会检查 Reservation 和 Equipment，保护有预约或设备关联的实验室。
+
+实验室查询接口只要求 get_current_user，因为学生浏览页也要复用；创建、更新、删除使用 get_current_admin。图片上传路线则复用第 19.7 节，先取得 URL，再把 form.img 随 labData 保存。
+
+### 19.11 设备管理：主列表之外还有实验室下拉框
+
+页面为 [frontend/src/views/Equipment.vue](frontend/src/views/Equipment.vue)，前端 API 为 [frontend/src/api/equipment.js](frontend/src/api/equipment.js)，后端入口为 [backend/app/api/equipment.py](backend/app/api/equipment.py)，业务层为 [backend/app/services/equipment_service.py](backend/app/services/equipment_service.py)。
+
+| 网页触发点 → 页面函数 | 前端 API 函数 | HTTP | 后端接口函数 → service 函数 |
+| --- | --- | --- | --- |
+| onMounted / handleSearch / 翻页 → load | getEquipmentPageList | GET /api/equipment/list | get_equipment_list → get_equipment_page_list |
+| handleCreate → handleSave，无 id | createEquipmentApi | POST /api/equipment | create_equipment → create_equipment |
+| handleEdit(row) → handleSave，有 id | updateEquipmentApi | PUT /api/equipment/{equipment_id} | update_equipment → update_equipment |
+| handleDelete(row) → 确认 | deleteEquipmentApi | DELETE /api/equipment/{equipment_id} | delete_equipment → delete_equipment |
+
+设备页面 onMounted 还调用 loadLabs，这不是同一个设备列表请求：
+
+```text
+Equipment.vue：loadLabs()
+  → frontend/src/api/lab.js：getLabPageList({ page: 1, page_size: 100 })
+  → GET /api/lab/list → lab_service.get_lab_page_list
+  → 返回实验室列表 → labOptions.value
+  → 下拉框显示 item.name，选中值绑定为实验室 ID
+```
+
+查询条件里的 params.lab_id 用来筛选设备；表单里的 form.lab_id 用来指定设备所属实验室。它们服务于不同动作，不能因为名字相同就认为改筛选会自动修改设备归属。
+
+保存时 handleSave 去掉 id，传递 equipmentData。service 会核对目标实验室存在，同一个实验室不能有另一台同名设备，随后创建或更新 Equipment 并 commit。响应的 lab_name 从 equipment.lab.name 补充，所以设备表格可以显示实验室名称。
+
+编辑按钮同样先用 row 回填表单，没有独立设备详情请求；删除前检查是否存在关联预约。查询只要求登录，写入要求管理员。设备图片也使用 form.img 和统一上传流程。
+
+<a id="19-student-flow"></a>
+
+### 19.12 学生浏览：页面导航时怎样把实验室 ID 传过去
+
+入口为 Layout.vue 的“实验室列表”，显示 [frontend/src/views/LabList.vue](frontend/src/views/LabList.vue)。
+
+```text
+LabList.vue：onMounted → load()
+  → api/lab.js.getLabPageList(params)
+  → GET /api/lab/list
+  → api/lab.py.get_lab_list
+  → lab_service.py.get_lab_page_list
+  → PageResponse → 页面 tableData、total → 卡片列表
+```
+
+当前 LabList.onMounted 还调用一次 loadLabs，查询最多 100 条实验室放进 labOptions；这是现有代码保留的额外请求，主要卡片数据仍来自 load，不要把两个函数当成同一次请求。
+
+点击卡片“查看设备”时，定位实际拼写 `handelViewEquipment(item)`：
+
+```js
+const handelViewEquipment = (lab) => {
+  router.push({ path: '/manager/labequipment', query: { lab_id: lab.id } })
+}
+```
+
+这是一次真正的页面导航。例如 lab.id 为 8，浏览器地址变成 /manager/labequipment?lab_id=8。Vue Router 显示 [frontend/src/views/LabEquipment.vue](frontend/src/views/LabEquipment.vue)，新页面用 useRoute() 获取路由对象，再用 `Number(route.query.lab_id)` 转为数字。
+
+LabEquipment.onMounted 检查 ID 是正整数后启动两条请求：
+
+| 页面函数 | 前端 API | 后端接口 → 业务函数 | 返回到哪个页面变量 |
+| --- | --- | --- | --- |
+| loadLab | api/lab.js.getLab(params.lab_id) | GET /api/lab/{lab_id} → api/lab.py.get_lab_detail → lab_service.get_lab | lab.value，供实验室名称、介绍和图片使用 |
+| loadEquipment | api/equipment.js.getEquipmentPageList(params) | GET /api/equipment/list → get_equipment_list → equipment_service.get_equipment_page_list，按 lab_id 过滤 | tableData.value、total.value，供设备表格和分页使用 |
+
+onMounted 中这两个函数调用没有互相 await，因此不能认为“一定先返回实验室详情，再请求设备”。两者都使用已从路由取得的 lab_id，可以各自完成。
+
+当前代码主要在组件创建和挂载时读取 ID；同页切换 query 后如何自动重查仍见第 15.16 节。源码中的 handel/hanlde 拼写在本章保留，是为了与你的实际搜索结果一致。
+
+### 19.13 提交预约：父页面把资源交给公共弹窗
+
+三种入口最终调用同一个 [frontend/src/components/ReserveDialog.vue](frontend/src/components/ReserveDialog.vue)：
+
+| 入口 | 页面函数 | 页面先改变什么 | 传入弹窗的资源 |
+| --- | --- | --- | --- |
+| LabList 卡片“预约” | handelReserve(lab) | currentLab=lab，reserveVisible=true | labId、labName；没有设备 ID |
+| LabEquipment“预约实验室” | hanldeReserveLab() | currentEquipment=null，reserveVisible=true | 当前 lab 的 ID/名称；没有设备 ID |
+| LabEquipment 设备行“预约” | hanldeReserveEquipment(row) | currentEquipment=row，reserveVisible=true | 当前 lab 加当前设备的 ID/名称 |
+
+**先打开，后提交。** 点击以上按钮只是选定资源并打开弹窗，没有立即创建预约。父页面用 `:lab-id`、`:equipment-id` 等属性传递信息，子组件通过 defineProps 接收；`v-model:visible="reserveVisible"` 连接弹窗开关。
+
+弹窗打开触发 handleOpen，等待 nextTick 后重置表单；真正点击“提交预约”才进入 handleSubmit：
+
+```text
+ReserveDialog.vue：@click="handleSubmit"
+  → 检查 submitting，执行表单校验
+  → frontend/src/api/reservation.js：createReservationApi({
+        lab_id: props.labId,
+        equipment_id: props.equipmentId ?? null,
+        date: form.date,
+        start_time: form.startTime,
+        end_time: form.endTime,
+        remark: form.remark
+    })
+  → request.js → POST /api/reservation
+  → backend/app/api/reservation.py：create_reservation
+      ReservationCreateRequest 校验输入并规范化时间
+      get_current_user 取得预约人；get_db 提供会话
+  → services/reservation_service.py：create_reservation
+      外层负责异常回滚和部分数据库错误的有限重试
+  → 同文件 _create_reservation
+      日期时段检查 → 锁定资源 → 检查启用、开放时间、设备归属
+      检查同资源 status=0/1 的时段冲突
+      Reservation(user_id=current_user.id, ..., status=0)
+      db.add → commit
+  → Response.success() → request.js → ReserveDialog.vue
+      提示“预约已提交” → emit('update:visible', false)
+  → 父页面 reserveVisible 变为 false，弹窗关闭
+```
+
+props 是“父组件传给子组件”，emit 是“子组件通知父组件”。这里 emit 通知的是关闭弹窗，不是发 HTTP，也没有自动导航到“我的预约”。父组件当前也没有通过成功事件自动刷新预约列表；用户另行进入“我的预约”后才查询新记录。
+
+创建请求没有 user_id，避免把预约人交给前端选择；后端从已认证的 current_user.id 填入。页面表单中 startTime/endTime 到接口 start_time/end_time 的转换发生在 handleSubmit，和修改密码的字段映射是同一类思路。
+
+### 19.14 我的预约：查询和取消分别走哪条路
+
+页面为 [frontend/src/views/MyReservation.vue](frontend/src/views/MyReservation.vue)。首次进入 `onMounted → load()`；筛选变化由 handleSearch 把 page 设回 1 再 load；翻页由 current-change 调用 load。
+
+查询主线：
+
+```text
+MyReservation.vue：load
+  → api/reservation.js：getReservationPageList(params)
+  → GET /api/reservation/list
+  → api/reservation.py：get_reservation_page_list
+  → reservation_service.py：get_reservation_page_list
+      非管理员添加 Reservation.user_id == current_user.id
+      有 status 时加状态条件；count、排序和分页
+      ReservationResponse.model_validate(item)
+      填 user_name、lab_name、equipment_name、type
+  → Response.success(data=PageResponse)
+  → tableData.value、total.value → 表格
+```
+
+默认 status=null 表示不按状态过滤，不表示不检查用户归属。lab_name 等字段的完整流向见第 18.9 节。
+
+取消主线：
+
+```text
+模板 @click="handleCancel(row)"
+  → handleCancel 等待确认框
+  → api/reservation.js：cancelReservationApi(row.id)
+  → PUT /api/reservation/{reservation_id}/cancel，无请求体
+  → api/reservation.py：cancel_reservation
+  → reservation_service.py：cancel_reservation(db, current_user, reservation_id)
+      查记录 → 检查属于本人 → 检查 status=0
+      item.status=3 → commit
+  → Response.success() → request.js
+  → MyReservation.vue：成功提示 → await load()
+  → 另发 GET 列表请求 → 更新当前表格
+```
+
+取消后的显示取决于当前筛选：如果查询全部状态，这条记录仍在并显示“已取消”；如果只查待审核，它会从本次结果中消失。后端始终保留这行历史数据。
+
+### 19.15 管理员查询与拒绝：复用哪些部分
+
+管理员从 Layout.vue 的“预约审核管理”进入 AuditReservation.vue。列表通路与 MyReservation 相同，区别在于默认 status=0，后端检测到 current_user.role 为 admin 后不附加“仅本人”条件，前端还显示 user_name 列。
+
+拒绝按钮定位：
+
+```vue
+<el-button type="danger" text bg @click="handleAudit(row, 2)">拒绝</el-button>
+```
+
+后续执行完全沿第 19.4 节的 handleAudit → auditReservationApi → PUT audit → API → service 路线，只是请求体改为 `{"status": 2}`。成功后 status=2，再调用 load。当前没有额外的 rejectReservationApi、拒绝专用接口或拒绝理由字段。
+
+“管理员可以查看全部”是 service 的数据过滤逻辑；“管理员可以审核”是 API 的 get_current_admin 依赖；“只对待审核显示按钮”是模板的 v-if。它们位于不同层，各自负责不同事情。
+
+<a id="19-error-flow"></a>
+
+### 19.16 公共异常路线：失败怎样回到页面
+
+以“普通用户直接调用审核接口”为例：
+
+```text
+请求到达 audit 路由
+  → dependencies/auth.py：get_current_admin
+  → role 不是 admin，raise BusinessException(code=403)
+  → 不执行正常审核函数体，不修改预约
+  → main.py 已注册的 business_exception_handler
+  → common/exceptions.py 构造 JSONResponse
+      HTTP 200，正文 code=403、message='无权限访问'
+  → request.js 的响应成功回调收到 HTTP 200
+      data.code !== 200，ElMessage.error 提示
+      return data
+  → 页面 await 得到 code=403 的对象
+      不进入 if (res.code === 200)，不显示审核成功，也不调用成功刷新
+```
+
+如果请求格式错误，例如审核请求体缺少 status，RequestValidationError 由 validation_exception_handler 转成 HTTP 422；Axios 进入响应错误回调并拒绝 Promise，页面进入 catch。其他未处理异常则由全局异常处理器处理。
+
+登录失效还多一条路线：request.js 的 handleUnauthorized 先比较请求记录的认证版本及 token，避免旧会话请求误清新登录；确认属于当前会话后，按当前代码提示并清理登录、导航到登录页。
+
+所以，排错时要同时看 Network 的 HTTP 状态和 JSON 中的 code。当前一般业务错误不一定进入 catch；“代码运行到了 await 后面”也不等于操作成功。
+
+### 19.17 数据在不同位置叫什么：一张表串起来
+
+| 业务数据 | 页面中的位置 | 发到后端的形式 | 后端中的位置 | 最后在哪里体现 |
+| --- | --- | --- | --- | --- |
+| 审核记录 ID | row.id | URL 的 /42/audit | reservation_id: int | 查找 reservation.id |
+| 通过/拒绝 | handleAudit 的 status 参数 | JSON 的 status | AuditReservationRequest.status → service 的 status | reservation.status，再经列表返回 row.status |
+| 预约人身份 | localStorage 中的 token | Authorization 请求头 | get_current_user → User.id | 创建时写 reservation.user_id；查询/取消用于归属检查 |
+| 实验室名称 | 列表 row.lab_name | 审核时不发送此字段 | 查询时 item.lab.name → ReservationResponse.lab_name | prop="lab_name" 对应的单元格 |
+| 预约时段 | ReserveDialog.form.startTime/endTime | start_time/end_time | ReservationCreateRequest → Reservation | 列表 row.start_time/end_time |
+| 每页条数 | User/Lab 页 params.pageSize | load 显式转换为 page_size | API 的 page_size | offset/limit 结果；预约两页当前还缺该转换 |
+| 图片文件 | 浏览器 File 对象 | FormData 的 file | UploadFile → 磁盘文件 | 返回 /uploads URL 供浏览器读取 |
+| 图片地址 | form.avatar 或 form.img | 普通 JSON 字符串字段 | 用户/资源请求模型 | 数据库 avatar/img 字段 |
+| 当前昵称 | utils/user.js 的 userInfo.value.name | 更新资料时作为 name 提交 | UserUpdateRequest → users.name | 返回后 updateUser，布局与首页更新 |
+
+后端 JSON 中的 null 对应前端的 null；Python 则使用 None。数据跨过 HTTP 边界后不是共享同一个内存对象：浏览器修改 row.status 不会自动修改 MySQL，必须发送被后端接受的写入请求。
+
+<a id="19-debug-flow"></a>
+
+### 19.18 实际复习时怎样一步步跟踪
+
+以审核通过为练习，不必一次打开整个项目。先并排打开这六个文件：
+
+1. frontend/src/views/AuditReservation.vue：按钮、handleAudit、load。
+2. frontend/src/api/reservation.js：auditReservationApi、getReservationPageList。
+3. frontend/src/utils/request.js：请求与响应拦截器。
+4. backend/app/api/reservation.py：audit_reservation、get_reservation_page_list。
+5. backend/app/services/reservation_service.py：两个同名业务函数。
+6. backend/app/models/reservation.py：表名、status、关联关系。
+
+遇到身份问题再打开 dependencies/auth.py；遇到数据类型问题打开 schemas/reservation.py；遇到错误响应打开 common/exceptions.py。
+
+按下面顺序检查实际运行：
+
+| 检查位置 | 看什么 | 能回答的问题 |
+| --- | --- | --- |
+| 页面按钮与 handleAudit | row.id、status 是否为预期；是否确认 | 页面到底调用了什么操作 |
+| 浏览器 Network | PUT 的 URL、Payload、响应；随后有无 GET | HTTP 有没有发出，发的 ID/状态是否正确 |
+| request.js | 是否附带 Authorization；响应被哪个分支处理 | 登录凭证、业务错误、网络错误如何处理 |
+| 后端路由函数 | 是否进入函数体；data.status、reservation_id | 方法路径是否匹配，参数/依赖是否通过 |
+| service | 记录是否存在、原状态、是否执行 commit | 业务判断和数据库写入停在哪一步 |
+| 页面 load | GET 响应里的 list/total，tableData.value | 数据已更新但页面为何看起来没有变化 |
+
+在 VS Code 中对导入的函数使用“转到定义”可以跟踪同一种语言内部的调用；在 HTTP 边界，需要根据 Network 中的“方法 + URL”去后端找装饰器，不能期待一个前端断点直接跨进 Python。调试 token 时查看是否存在即可，不要把真实凭证复制进公开文档或截图。
+
+本章内容依据当前源码逐文件核对，属于执行关系说明；没有新增业务代码，也没有因此把真实浏览器验收标为通过。复习时若能不看本章，自己说清“按钮 → 函数 → HTTP → 后端校验 → 数据库 → 响应 → 页面更新”，就已经从认识单个文件进步到理解整个功能的协作过程。
 
 ---
 

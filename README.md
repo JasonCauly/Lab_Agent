@@ -1,10 +1,12 @@
 # Lab_Agent — 实验室智能预约管理系统
 
-基于 FastAPI、Vue 3、MySQL 的实验室管理与预约项目。已实现用户与资源管理、实验室和设备浏览，以及预约提交、时间冲突检查和待审核记录保存。Agent 智能交互仍为后续计划。
+基于 FastAPI、Vue 3、MySQL 的实验室管理与预约项目。已实现用户与资源管理、实验室和设备浏览，以及普通用户申请、查询和取消预约、管理员通过和拒绝预约的主要业务流程。Agent 智能交互仍为后续计划。
 
-文档更新：2026-10-20。
+文档更新：2026-10-21。
 
-[学习与复习笔记](demo_1代码学习_复习笔记.md) · [逻辑审查记录](docs/logic-review-2026-10-20.md) · [指定问题修补说明](docs/logic-fixes-2026-10-20.md)
+[学习与复习笔记](demo_1代码学习_复习笔记.md) · [逻辑修补教程](demo_1代码学习_复习笔记.md#17-logic-fixes) · [预约查询、取消与审核教程](demo_1代码学习_复习笔记.md#18-reservation-workflow)
+
+[项目运行与功能路线图](#runtime-flow) · [逐文件、逐函数执行讲解](demo_1代码学习_复习笔记.md#19-code-flow)
 
 ## 当前功能与进度
 
@@ -13,12 +15,14 @@
 | 用户与登录 | 注册、JWT 登录、个人信息与头像、修改密码、管理员用户增删改查 |
 | 实验室与设备 | 资料管理、分页搜索、按实验室筛选设备、学生端卡片和详情浏览 |
 | 预约提交 | 共用预约弹窗、日期和时段填写、实验室/设备状态检查、设备归属检查、同资源时段冲突检查 |
-| 数据一致性 | 预约事务锁与死锁重试、用户名数据库唯一约束及升级脚本、有预约历史的资源和用户禁止删除 |
+| 我的预约 | 查询本人预约、按状态筛选、分页、取消本人待审核预约 |
+| 预约审核管理 | 管理员查询全部用户预约、查看预约人、通过或拒绝待审核预约；默认显示待审核 |
+| 数据一致性 | 创建预约的事务锁与死锁重试、用户名数据库唯一约束及升级脚本、有预约历史的资源和用户禁止删除 |
 | 表单和登录修补 | 设备新增重置、正整数容量、删除确认异常处理、JWT UTC 有效期、旧请求 401 防止误清新登录状态 |
 
-**预约当前仅完成提交阶段。** 新记录为待审核（status=0），会占用同资源时段；尚无“我的预约”、审核和取消接口及页面。整间实验室与其设备分别检查冲突，设备 quantity 尚未用于按数量预约。
+**预约主要流程已接通。** 新记录为待审核（status=0）；本人可取消为 3，管理员可通过为 1 或拒绝为 2。当前仅允许操作待审核记录，取消会保留历史记录，已通过的预约不能再取消。状态 0、1 占用同资源时段，2、3 不占用；整间实验室与其设备仍分别检查冲突，设备 quantity 尚未用于按数量预约。
 
-本轮指定修补覆盖 7 项问题，并不代表审查报告中的所有问题均已关闭。日期有效性、零时长、部分基础数据约束、旧会话失效和上传认证等仍需完善，详见学习笔记第 17 节。报告反映修补前发现的问题，应结合修补说明和当前代码阅读。
+前一轮的 7 项指定修补与本轮新增业务详见学习笔记第 17、18 节。日期有效性、零时长、部分基础数据约束、旧会话失效和上传认证等仍需完善；本轮审核与取消的并发状态更新也尚未保护。功能已写出不代表真实 MySQL 并发和浏览器完整验收已完成。
 
 ## 1. 技术栈
 
@@ -74,7 +78,6 @@ Lab_Agent/
 │   ├── .env                # 本地创建，不提交
 │   ├── .venv/              # Python 虚拟环境
 │   ├── uploads/            # 用户上传文件
-│   ├── tests/              # 临时 SQLite 隔离回归测试
 │   └── requirements.txt
 │
 ├── frontend/
@@ -94,12 +97,13 @@ Lab_Agent/
 │   ├── package-lock.json
 │   └── vite.config.js
 │
-├── docs/                   # 逻辑审查和修补记录
 ├── demo_1代码学习_复习笔记.md
 └── README.md
 ```
 
 说明：`.env`、`.venv`、`node_modules` 等文件或目录不会包含在 GitHub 仓库中，需要在下载代码后自行配置或安装。具体目录以仓库当前版本为准。
+
+当前工作区未包含早期记录引用的 `docs/`、`backend/tests/` 和 `frontend/tests/`。历史说明保留在学习笔记中；不要把早期测试结果视为当前版本可直接重跑的测试套件。
 
 ## 3. 环境准备
 
@@ -281,7 +285,7 @@ HAVING COUNT(*) > 1;
 .\.venv\Scripts\python.exe -m app.migrations.add_username_unique
 ```
 
-脚本添加 uq_users_username 唯一索引；已存在用户名唯一约束时会跳过。若发现重复数据，先人工核实账号身份和历史预约归属，再处理数据并重试。完整说明见 [数据库升级与事务修补记录](docs/logic-fixes-2026-10-20.md)。本轮文档验证没有对现有 MySQL 执行升级。
+脚本添加 uq_users_username 唯一索引；已存在用户名唯一约束时会跳过。若发现重复数据，先人工核实账号身份和历史预约归属，再处理数据并重试。完整说明见 [学习笔记第 17 节](demo_1代码学习_复习笔记.md#17-logic-fixes)。本轮预约查询、取消和审核复用现有 reservation 表，无新增表字段；本轮文档验证没有对现有 MySQL 执行升级。
 
 ## 6. 配置 FastAPI 后端
 
@@ -634,9 +638,14 @@ Authorization: Bearer <token>
 | `/api/equipment` | POST | 新增设备 |
 | `/api/equipment/{equipment_id}` | PUT / DELETE | 修改 / 删除设备 |
 | `/api/reservation` | POST | 提交实验室或设备预约 |
+| `/api/reservation/list` | GET | 分页查询；普通用户仅本人，管理员全部；支持 status 筛选 |
+| `/api/reservation/{reservation_id}/cancel` | PUT | 取消本人待审核预约，不需要请求体 |
+| `/api/reservation/{reservation_id}/audit` | PUT | 管理员审核待审核预约；请求体 status=1 通过、2 拒绝 |
 | `/api/files/upload` | POST | 文件上传 |
 
 用户管理和资源写入接口要求管理员；资源查询和预约提交要求有效登录。当前文件上传接口尚未增加登录依赖，不能视为已有统一认证保护。
+
+预约审核由后端 `get_current_admin` 检查管理员身份；取消接口同时检查记录归属和待审核状态，管理员也不能通过取消接口取消他人的记录。前端隐藏菜单和按钮不替代这些检查。
 
 具体参数和响应模型请以 FastAPI 的 `/docs` 为准。
 
@@ -662,7 +671,7 @@ http://127.0.0.1:8000/uploads/文件名
 
 该目录不应直接提交到 GitHub。
 
-### 8.5 提交预约
+### 8.5 申请、查询、取消与审核预约
 
 学生在“实验室列表”的卡片上预约实验室，或进入设备列表预约指定设备。三个入口共用 ReserveDialog.vue，提交到 POST /api/reservation。
 
@@ -681,7 +690,50 @@ http://127.0.0.1:8000/uploads/文件名
 
 equipment_id 为 null 表示预约整间实验室；填写设备 ID 表示预约该设备，设备必须属于所选实验室。预约人由后端从 token 对应的当前用户取得，请求体不提供 user_id。
 
-成功返回 code=200、data=null，并保存 status=0 的待审核记录；此处不返回预约详情。状态 0、1 参与冲突判断，状态 2、3 不占用时段；相邻且不重叠的时段可以提交。当前无审核/取消入口，状态说明不代表这些流程已经实现。
+成功返回 code=200、data=null，并保存 status=0 的待审核记录；此处不返回预约详情。状态 0、1 参与冲突判断，状态 2、3 不占用时段；相邻且不重叠的时段可以提交。
+
+两个新增页面：
+
+| 角色菜单 | 页面路径 | 默认查询 | 可以执行的操作 |
+| --- | --- | --- | --- |
+| 普通用户：我的预约 | `/manager/myreservation` | 本人全部状态 | 筛选、翻页、取消本人待审核预约 |
+| 管理员：预约审核管理 | `/manager/auditreservation` | 全部用户的待审核预约 | 筛选、翻页、通过或拒绝待审核预约 |
+
+两个页面共用列表接口，例如：
+
+```http
+GET /api/reservation/list?page=1&page_size=10&status=0
+```
+
+省略 status 表示不按状态筛选，传 0 表示只查待审核。后端按当前登录用户决定数据范围，不接收前端指定的 user_id。列表成功返回 `data: { list: [...], total: 数量 }`；每行含实验室名、可选设备名、预约人名、日期、时段、备注和状态。查询到的名称来自当前关联资料。
+
+取消预约（把 42 换成实际 ID）：
+
+```http
+PUT /api/reservation/42/cancel
+```
+
+管理员审核：
+
+```http
+PUT /api/reservation/42/audit
+Content-Type: application/json
+
+{"status": 1}
+```
+
+将 status 改为 2 表示拒绝。取消和审核成功均返回 code=200、data=null，页面随后重新查询列表。管理员默认筛选待审核，因此审核成功的行会从当前列表消失，切换状态可再查看；记录没有被删除。
+
+建议准备学生 A、学生 B、管理员三个学习账号，依次检查：
+
+1. A 提交实验室及设备预约，在“我的预约”看到待审核记录；B 的列表看不到 A 的记录。
+2. A 在确认框关闭时不发出取消请求；确认取消后状态变为已取消，同一资源同一时段可重新申请。
+3. 管理员通过一条待审核记录；A 刷新后看到已通过，取消按钮消失，同资源重叠时段仍被阻止。
+4. 管理员拒绝另一条记录；A 刷新后看到已拒绝，原时段可以重新申请。
+5. 直接调用接口验证：普通用户不能审核，不能取消别人的记录；非待审核记录不能再次审核或取消。
+6. 验证状态 0 筛选、清空筛选、超过一页的数据，以及审核、取消同时发生的情况。
+
+以上是待执行的浏览器与联调清单，不是本轮已经全部通过的验收结果。当前两个页面的 pageSize 尚未映射为后端 page_size，默认都为 10 时不易发现；loading 未设为 true，Search 图标变量也未导入。具体原因和建议改法见学习笔记第 18 节。
 
 冲突和部分删除限制使用业务 code=409。当前统一业务异常响应仍为 HTTP 200，客户端需要读取 JSON 中的 code；参数校验错误使用 HTTP 422。
 
@@ -699,10 +751,10 @@ WHERE username = 'YOUR_ADMIN_USERNAME';
 
 ### 8.7 回归检查与当前验证范围
 
-后端在 backend 目录运行：
+后端在 backend 目录可先检查 Python 语法（不等于业务测试）：
 
 ```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe -m compileall -q app
 ```
 
 前端在 frontend 目录运行：
@@ -711,9 +763,11 @@ WHERE username = 'YOUR_ADMIN_USERNAME';
 npm.cmd run build
 ```
 
-2026-10-20 重新验证：19 项后端测试通过，前端构建通过，存在包体积提示。后端测试覆盖并发预约、设备归属和历史冲突、并发账号创建、关联删除、升级脚本及 UTC 有效期；测试覆盖配置并使用临时 SQLite 数据，不连接现有 MySQL。MySQL 死锁/超时分支通过模拟异常验证。
+2026-10-21 本轮检查：后端 Python 语法检查通过；提取实际模型和业务函数，在内存 SQLite 上完成查询范围、分页、状态转换、取消/拒绝后重新预约等检查，并静态核对接口身份依赖，共 33 个断言通过。前端提取两个实际页面的函数，模拟 API 与确认框，完成 18 组场景检查；其中也确认了 pageSize、loading 和 Search 的现状。前端构建通过，仍有包体积提示。
 
-另完成预约弹窗和旧请求 401 的隔离函数检查。真实 MySQL/InnoDB 并发、旧库迁移及浏览器完整流程仍待验收；构建成功不能替代这些检查。
+这些是本轮临时隔离检查，没有新增为仓库内的测试文件；未连接现有 MySQL。早期的 19 项后端与 6 项登录测试是历史结果，当前工作区缺少对应测试文件。虽然 package.json 仍有 test 脚本，也不能把发现零个测试当成这 6 项重新通过。
+
+真实 MySQL/InnoDB 并发、旧库迁移及浏览器完整流程仍待验收。创建预约的事务保护没有自动扩展到新加的取消与审核函数；同时处理同一条待审核记录时仍可能覆盖状态。完整解释与验收表见 [第 18 节](demo_1代码学习_复习笔记.md#18-reservation-workflow)。
 
 ## 9. 常见问题
 
@@ -994,4 +1048,169 @@ GitHub：
 
 https://github.com/JasonCauly/Lab_Agent
 
-项目持续开发中，下一阶段重点是预约查询、审核、取消及剩余逻辑问题；Agent 智能交互尚未接入。详细实现、语法讲解和验收清单见 [学习笔记第 16、17 节](demo_1代码学习_复习笔记.md#16-reservation)。
+预约主要业务代码已写出。下一阶段重点是完善剩余约束、保护审核与取消的并发状态更新、完成真实浏览器验收，并在空目录和独立学习数据库中复现全项目；Agent 智能交互尚未接入。最新逐步讲解、代码快照和验收清单见 [学习笔记第 18 节](demo_1代码学习_复习笔记.md#18-reservation-workflow)。
+
+<a id="runtime-flow"></a>
+
+## 15. 项目运行与功能路线图
+
+下面按当前源码说明实际调用关系。图中前端 `views/`、`api/`、`utils/` 等路径相对 `frontend/src/`；后端路径相对 `backend/app/`。文件之间的箭头表示函数调用、数据传递或请求，不表示每一步都会切换网页。详细代码与传参解释见 [教学笔记第 19 章](demo_1代码学习_复习笔记.md#19-code-flow)。
+
+### 15.1 启动与一次请求的总路线
+
+```mermaid
+flowchart TD
+    subgraph Frontend[前端启动与页面]
+        F0["npm run dev → Vite"] --> F1["index.html → src/main.js"]
+        F1 --> F2["注册 router、Element Plus；挂载 App.vue"]
+        F2 --> F3["router/index.js 匹配地址与登录守卫"]
+        F3 --> F4["Layout.vue / router-view → 具体页面"]
+    end
+    subgraph Backend[后端启动与路由准备]
+        B0["uvicorn app.main:app → main.py"] --> B1["导入配置、数据库、模型、路由"]
+        B1 --> B2["config.py → settings；database.py → engine / SessionLocal"]
+        B1 --> B3["模型注册 → create_all；include_router；异常处理与静态目录"]
+    end
+    F4 --> E["页面事件或 onMounted → 页面函数"]
+    E --> A["前端 api/*.js：构造 method、url、params/data"]
+    A --> R["utils/request.js：添加 token，发送 HTTP"]
+    R --> P["开发环境 vite.config.js：/api 代理"]
+    P --> B4["FastAPI 按 method + path 匹配已注册接口"]
+    B3 -.准备路由.-> B4
+    B4 --> B5["参数模型校验；按接口声明解析身份和数据库依赖"]
+    B5 --> B6["api/*.py → services/*_service.py"]
+    B6 --> DB[(MySQL)]
+    DB --> OUT["返回数据 → Response.success；失败由异常处理器生成响应"]
+    OUT --> RI["request.js 响应拦截器 → 返回正文或拒绝 Promise"]
+    RI --> UI["页面更新 ref / reactive → Vue 更新界面"]
+```
+
+登录、注册不要求先登录；上传目前直接在 `api/files.py` 写磁盘；获取本人信息直接返回认证依赖取得的用户，并非所有接口都经过 service。main.py 中的初始化也不是每次请求重新执行。
+
+### 15.2 管理员点击“通过”：精确调用路线
+
+逐步代码解释见[审核通过的十二步](demo_1代码学习_复习笔记.md#19-audit-flow)。
+
+```mermaid
+sequenceDiagram
+    actor Admin as 管理员
+    participant View as views/AuditReservation.vue
+    participant API as 前端 api/reservation.js
+    participant Req as utils/request.js
+    participant Route as 后端 api/reservation.py
+    participant Service as services/reservation_service.py
+    participant DB as MySQL reservation 表
+    Admin->>View: 点击 @click="handleAudit(row, 1)"
+    View->>View: handleAudit：等待确认框确认
+    View->>API: auditReservationApi(row.id, 1)
+    API->>Req: request：PUT，URL 中的 ID，data={status:1}
+    Req->>Route: 经开发代理发送 PUT /api/reservation/{id}/audit
+    Note over Route: AuditReservationRequest；get_current_admin；get_db
+    Route->>Service: audit_reservation(db, reservation_id, status=1)
+    Service->>DB: 查记录 → 要求原 status=0 → 更新 status=1 → commit
+    Service-->>Route: 正常返回
+    Route-->>Req: Response.success() → code=200, data=null
+    Req-->>View: 拦截器返回响应正文，await 继续执行
+    View->>View: 提示成功 → await load()
+    View->>API: getReservationPageList(params)
+    API->>Req: GET /api/reservation/list
+    Req->>Route: 再次查询，默认 status=0
+    Route->>Service: get_reservation_page_list(...)
+    Service->>DB: 按角色、状态和分页查询，组装名称
+    DB-->>Service: 查询结果
+    Service-->>Route: PageResponse(list, total)
+    Route-->>Req: Response.success(data=分页结果)
+    Req-->>View: res.data.list / res.data.total
+    View->>View: 更新 tableData、total；已通过行退出待审核列表
+```
+
+定位顺序：[按钮与 handleAudit](frontend/src/views/AuditReservation.vue) → [auditReservationApi](frontend/src/api/reservation.js) → [请求与响应拦截器](frontend/src/utils/request.js) → [后端 audit 接口](backend/app/api/reservation.py) → [管理员依赖](backend/app/dependencies/auth.py) → [audit_reservation 业务函数](backend/app/services/reservation_service.py)。通过传 1，拒绝传 2；均不切换页面，成功后会另发一次 GET 刷新列表。取消与审核的并发边界见第 8.7 节和教学笔记第 18.17 节。
+
+### 15.3 账号与个人资料路线
+
+```mermaid
+flowchart LR
+    R["Register.vue：register"] --> R1["api/auth.js：registerApi<br/>POST /api/auth/register"]
+    R1 --> R2["api/auth.py：register<br/>auth_service.register → hash_password → users"]
+    R2 --> R3["成功返回 → router.push('/login')"]
+    L["Login.vue：login"] --> L1["api/auth.js：loginApi<br/>POST /api/auth/login"]
+    L1 --> L2["api/auth.py：login<br/>auth_service.login → 校验密码 → 生成 JWT"]
+    L2 --> L3["saveLoginData → token / 用户信息<br/>router.replace('/manager/home')"]
+    P["Profile.vue：loadUserInfo / handleSubmit"] --> P1["api/user.js：getUserInfo / updateUserInfo<br/>GET / PUT /api/user/me"]
+    P1 --> P2["api/user.py：get_user_info / update_user_info<br/>查询用认证用户；修改调用 user_service.update_user_info"]
+    P2 --> P3["查询填 form；保存后 updateUser<br/>Layout / Home 读取共享 userInfo"]
+    W["Password.vue：handleSubmit"] --> W1["api/user.js：updatePassword<br/>PUT /api/user/password"]
+    W1 --> W2["api/user.py → user_service.update_password<br/>验证旧密码、保存新哈希"]
+    W2 --> W3["成功 → 前端 logout → 登录页"]
+```
+
+普通退出登录：`Layout.vue.handleCommand('logout') → utils/auth.js.logout → 清理 localStorage → router.push('/login')`，当前没有后端登出接口。修改密码后的前端退出也不代表已建立服务端旧 token 撤销机制。
+
+### 15.4 用户、实验室与设备管理路线
+
+三个管理页面都采用“列表 → 打开表单 → 保存或删除 → 成功后重新查询”的方式：
+
+```mermaid
+flowchart TD
+    ENTER["User.vue / Lab.vue / Equipment.vue"] --> Q["onMounted / handleSearch / 翻页 → load"]
+    Q --> QAPI["getUserPageList / getLabPageList / getEquipmentPageList"]
+    ENTER --> OPEN["handleCreate 重置表单；handleEdit(row) 回填表单"]
+    OPEN --> SAVE["表单提交 → handleSave → 按 form.id 判断新增或修改"]
+    SAVE --> WRITE["create*Api：POST；update*Api：PUT"]
+    ENTER --> DEL["handleDelete(row) → 确认框 → delete*Api：DELETE"]
+    QAPI --> HTTP["前端 api/user.js、lab.js、equipment.js → request.js"]
+    WRITE --> HTTP
+    DEL --> HTTP
+    HTTP --> ROUTE["后端 api/user.py、lab.py、equipment.py：对应路由函数"]
+    ROUTE --> SERVICE["对应 *_service.py：查询 / 创建 / 修改 / 关联检查后删除"]
+    SERVICE --> DB[(users / labs / equipments)]
+    DB --> BACK["Response → request.js → 页面"]
+    BACK --> DONE["查询：填 tableData / total<br/>写入成功：关闭表单或提示 → load 再查询"]
+```
+
+| 模块 | 前端 API 文件 / 后端 API 文件 | service 的主要函数 |
+| --- | --- | --- |
+| 用户 | `frontend/src/api/user.js` / `backend/app/api/user.py` | `user_service.py`：get_user_page_list、create_user、update_user、delete_user |
+| 实验室 | `frontend/src/api/lab.js` / `backend/app/api/lab.py` | `lab_service.py`：get_lab_page_list、create_lab、update_lab、delete_lab |
+| 设备 | `frontend/src/api/equipment.js` / `backend/app/api/equipment.py` | `equipment_service.py`：get_equipment_page_list、create_equipment、update_equipment、delete_equipment |
+
+点击“编辑”先回填当前行，不另发详情请求；点击表单“保存”才写后端。用户管理接口要求管理员，实验室/设备查询只要求登录，写入要求管理员。
+
+### 15.5 学生浏览、申请、查询与取消路线
+
+```mermaid
+flowchart TD
+    LAB["LabList.vue：onMounted → load<br/>getLabPageList → GET /api/lab/list"] --> CARDS["lab_service.get_lab_page_list → 卡片列表"]
+    CARDS --> DETAIL["handelViewEquipment(item)<br/>router.push：/manager/labequipment?lab_id=..."]
+    DETAIL --> PAGE["LabEquipment.vue：读取 route.query.lab_id"]
+    PAGE --> INFO["loadLab → api/lab.js.getLab<br/>GET /api/lab/{id} → lab_service.get_lab"]
+    PAGE --> EQUIP["loadEquipment → getEquipmentPageList<br/>GET /api/equipment/list → 按 lab_id 查询"]
+    CARDS --> OPEN["handelReserve；或详情页 hanldeReserveLab / hanldeReserveEquipment"]
+    INFO --> OPEN
+    EQUIP --> OPEN
+    OPEN --> DIALOG["props / v-model → ReserveDialog.vue<br/>handleOpen 重置；handleSubmit 提交"]
+    DIALOG --> CREATE["createReservationApi → POST /api/reservation<br/>api.create_reservation → service.create_reservation → _create_reservation"]
+    CREATE --> PENDING["校验与冲突检查 → reservation 新增 status=0<br/>成功提示 → emit 关闭弹窗"]
+    PENDING -.用户另行进入.-> MINE["MyReservation.vue：load → getReservationPageList<br/>GET /api/reservation/list → 本人记录"]
+    MINE --> CANCEL["handleCancel(row) → 确认<br/>cancelReservationApi → PUT /api/reservation/{id}/cancel"]
+    CANCEL --> UPDATE["api.cancel_reservation → service.cancel_reservation<br/>检查本人及 status=0 → 改为 3 → commit"]
+    UPDATE --> RELOAD["成功返回 → load → 重新显示列表"]
+```
+
+图中 `handelViewEquipment`、`handelReserve`、`hanldeReserveLab`、`hanldeReserveEquipment` 保留源码的实际拼写，便于搜索。预约成功当前只关闭弹窗，不自动跳到“我的预约”。
+
+### 15.6 图片上传与读取路线
+
+```mermaid
+flowchart TD
+    PICK["Profile.vue / Lab.vue / Equipment.vue<br/>选择图片 → beforeAvatarUpload → handleFileUpload"]
+    PICK --> FORM["api/files.js：uploadFileApi<br/>FormData 的 file 字段"]
+    FORM --> UP["request.js → POST /api/files/upload"]
+    UP --> DISK["api/files.py：upload<br/>检查文件 → 写入 backend/uploads"]
+    DISK --> URL["FileResponse.url → /uploads/文件名"]
+    URL --> LOCAL["页面写 form.avatar 或 form.img → 显示预览"]
+    LOCAL --> SAVE["另点保存 → 用户 / 实验室 / 设备更新接口<br/>数据库保存图片 URL"]
+    LOCAL --> IMG["浏览器 img 请求 /uploads/文件名<br/>Vite 代理 → main.py 的 StaticFiles → 图片内容"]
+```
+
+图片上传、业务资料保存、图片读取是不同请求；读取图片不经过 Axios 响应拦截器，上传文件本身也不直接更新用户或资源记录。
