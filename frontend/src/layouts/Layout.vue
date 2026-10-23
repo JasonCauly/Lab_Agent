@@ -59,6 +59,11 @@
               <span>用户管理</span>
             </el-menu-item>
 
+            <el-menu-item index="/manager/aichat" v-if="userInfo?.role === 'student'">
+              <el-icon><ChatDotRound /></el-icon>
+              <span>AI智能助手</span>
+            </el-menu-item>
+
             <el-menu-item index="/manager/lablist" v-if="userInfo?.role === 'student'">
               <el-icon><House /></el-icon>
               <span>实验室列表</span>
@@ -80,7 +85,15 @@
 </template>
 
 <script setup>
-import { Menu, House, Setting, User, Tickets, DocumentChecked } from '@element-plus/icons-vue'
+import {
+  Menu,
+  House,
+  Setting,
+  User,
+  Tickets,
+  DocumentChecked,
+  ChatDotRound
+} from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
 import { logout } from '@/utils/auth'
 import { useUser } from '@/utils/user'

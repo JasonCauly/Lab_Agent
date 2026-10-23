@@ -1,9 +1,10 @@
+import asyncio
+from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from app.config import UPLOAD_DIR
-from app.models.equipment import Equipment
 from app.models.user import User
 from app.models.lab import Lab
 from app.models.equipment import Equipment
@@ -17,10 +18,25 @@ from app.common.exceptions import (
     validation_exception_handler,
     global_exception_handler,
 )
+from app.services import reservation_service
 
 Base.metadata.create_all(bind=engine)  # 自动创建数据库表结构
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(
+        reservation_service.run_expire_scan()
+    )  # 启动项目 开启异步的扫描任务
+    try:
+        yield
+    finally:
+        task.cancel()  # 关闭项目 同时取消异步任务
+        with suppress(asyncio.CancelledError):
+            await task
+
+
+app = FastAPI(lifespan=lifespan)
 
 origins = [
     "http://localhost:5173",

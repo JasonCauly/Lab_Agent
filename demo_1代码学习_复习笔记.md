@@ -1,10 +1,12 @@
 # demo_1代码学习：复习笔记与后续任务
 
-整理日期：2026-10-21。
+整理日期：2026-10-23。
 
 > **使用方式**：先阅读概念和执行流程，再对照文件看代码。代码块中标明了文件路径。末尾的待办清单区分“已经讲过”和“尚待讲解、验证”。
 >
 > **最终目标**：理解 lab-agent 的设计与代码，并能够从空目录创建、配置、运行和检查项目。
+>
+> **本轮新增**：第 20 节讲解 AI 对话、BGE/Chroma 知识库检索和智能体准备；第 21 节讲解预约过期扫描、本次报错修补及旧章节结论更新。当前可问答静态规则，尚未接入实时业务工具。
 >
 > **当前进度**：第 16 节讲解预约提交，第 17 节讲解逻辑修补与登录导航。第 18 节新增预约分页查询、本人取消和管理员通过/拒绝，主要预约业务流程已接通；补充状态转换、数据权限、表格名称来源、当前代码边界及验收清单。第 19 节按实际使用过程串起项目启动与各功能的文件、函数、请求和返回数据。旧库迁移、真实 MySQL 并发与浏览器验收、全项目从零复现仍需完成。章节按日期保留历史代码，最新行为以相应更新章节为准。
 >
@@ -35,8 +37,10 @@
 17. [新增教程：逻辑修补、事务并发与回归验证](#17-logic-fixes)
 18. [新增教程：我的预约、取消申请与管理员审核](#18-reservation-workflow)
 19. [整项目执行路线：从网页操作追踪到数据库，再回到页面](#19-code-flow)
+20. [新增教程：AI 对话、向量知识库与智能体准备](#20-ai-rag)
+21. [新增教程：过期扫描、本轮修补与旧章节校正](#21-ai-fixes)
 
-最近更新：[整项目与各功能的逐文件执行路线](#19-code-flow)。预约业务详解见[第 18 节](#18-reservation-workflow)，登录导航补充见 [17.14](#17-login-navigation)。
+最近更新：[AI 对话与知识检索](#20-ai-rag)、[过期扫描与修补复盘](#21-ai-fixes)。整项目路线见[第 19 节](#19-code-flow)。预约业务详解见[第 18 节](#18-reservation-workflow)，登录导航补充见 [17.14](#17-login-navigation)。
 
 <a id="01-overview"></a>
 
@@ -377,6 +381,8 @@ COLLATE utf8mb4_unicode_ci;
 这一步创建数据库。SQLAlchemy 的 `create_all()` 后面负责创建表，不能代替创建数据库。
 
 ### 3.2 环境配置
+
+2026-10-23 更新：本节保留基础阶段配置。当前 Settings 还要求 LLM_API_KEY、LLM_MODEL、LLM_BASE_URL；从零启动当前版本请使用 README 第 6.4 节完整配置，新增字段解释见第 20.3 节。
 
 学习副本 `backend/.env`：
 
@@ -1234,6 +1240,8 @@ api.include_router(user_router)
 | /api + /user + /info | /api/user/info | GET |
 
 ### 6.4 当前进度的后端入口整合版
+
+阶段说明：下面是早期入口。当前 main.py 已通过 lifespan 启动预约过期扫描，关闭时取消并等待任务；更新代码见第 21.3 节。
 
 `backend/app/main.py`：
 
@@ -2735,6 +2743,10 @@ location.reload()
 - [ ] 明确过期申请、资源关闭后的审核，以及是否需要审核人、审核时间和拒绝理由。
 - [ ] 恢复并维护可重复运行的测试文件；不要仅保留一次性测试结果。
 - [ ] 按第 18.20 节完成三个账号的浏览器验收，再进行全项目从零复现。
+
+### 10.14 AI 与自动过期的新增验收（第 20、21 节）
+
+本轮新增内容已经讲解；真实模型服务、知识库重建、知识文本与业务一致性、审核与扫描竞争仍需验收，清单见第 20.15、21.6 节。
 
 <a id="11-references"></a>
 
@@ -15047,6 +15059,8 @@ onMounted(() => {
 
 ### 18.2 用状态转换理解业务规则
 
+2026-10-23 补充：状态 0 还会在后台扫描发现预约结束时间已到时自动转为 3；状态 3 当前未区分本人取消和自动过期。扫描行为与并发边界见第 21 节。
+
 **状态**表示记录现在处于哪个阶段；**状态转换**表示某个操作允许把它从哪个阶段改到哪个阶段。
 
 ```mermaid
@@ -15497,6 +15511,8 @@ WHERE id = :reservation_id
 完整改造还要处理未匹配时的反馈、commit/rollback、驱动的行数返回方式，以及与创建预约的锁顺序是否一致，不能只复制这条 SQL 就宣称并发问题全部解决。[SQLAlchemy 更新及匹配行数说明](https://docs.sqlalchemy.org/en/20/tutorial/data_update.html#getting-affected-row-count-from-update-delete)
 
 ### 18.18 当前代码细节与建议改法
+
+2026-10-23 复核：预约两页的 pageSize 映射、loading、Search 导入与审核标题问题仍存在。新 AI 页的 loading/catch 修补并未同时修改这两个页面；下面建议仍需另行实施。
 
 以下均为阅读源码发现的待完善项，本轮仅修改文档。
 
@@ -16529,6 +16545,8 @@ export default defineConfig({
 
 ### 19.2 启动阶段：两套程序分别准备好
 
+2026-10-23 补充：当前导入 AI 路由会加载向量模型，lifespan 还会创建过期扫描任务。向量集合仍延迟到首次检索创建。扩展启动路线见第 20.4、21.3 节。
+
 **前端启动路线。**
 
 ```text
@@ -17306,12 +17324,809 @@ MyReservation.vue：load
 
 维护说明：章节按日期保存实现过程。已有问题修正后同步更新进度；正常流程、已知边界、隔离验证和真实浏览器验收分别记录。整个项目的从零复现仍需最终完成一次完整检查。
 
+<a id="20-ai-rag"></a>
+
+## 20. 新增教程：AI 对话、向量知识库与智能体准备
+
+本章按 2026-10-23 当前源码讲解。阅读目标是自己说清“一条问题如何进入后端、如何取得资料、模型收到什么、回答如何回到页面”，并理解哪些能力已经实现、哪些仍属于后续智能体工作。
+
+### 20.1 当前阶段实现了什么
+
+项目已经具备聊天界面、登录后的聊天接口、历史消息传递、本地知识库检索及调用聊天模型的基础流程。这种“先检索资料，再让模型结合资料生成回答”的流程称为 RAG（检索增强生成）。
+
+当前由 Python 代码固定执行检索和生成步骤，没有 tools 定义、模型选择工具的循环，也没有调用预约数据库的查询或写入服务。SYSTEM_PROMPT 明确提示模型不能知道实时空闲和库存；这项能力边界来自当前调用链。
+
+后续实现智能体时，可以复用本章的消息结构、模型客户端、认证入口和前端，再增加可供模型调用的业务工具。一个“帮我预约”的回答文本本身不会创建数据库记录。
+
+### 20.2 新增文件地图与阅读顺序
+
+| 文件 | 负责什么 | 怎样与下一层连接 |
+| --- | --- | --- |
+| frontend/src/router/index.js | aichat 子路由 | 加载 AIChat.vue，完整路径 /manager/aichat |
+| frontend/src/layouts/Layout.vue | 学生菜单及 ChatDotRound 图标 | 菜单点击进入该路由 |
+| frontend/src/views/AIChat.vue | 消息、输入框、发送状态与渲染 | handleSend 调用 chatApi |
+| frontend/src/api/ai.js | POST /api/ai/chat，30 秒超时 | 复用 utils/request.js 的 Axios 实例 |
+| backend/app/api/__init__.py | 合并 ai_router | /api 与 /ai、/chat 拼成完整地址 |
+| backend/app/schemas/ai.py | ChatMessage、ChatRequest | 校验 JSON 字段和嵌套消息列表 |
+| backend/app/api/ai.py | 登录依赖、调用服务、包装响应 | ai_service.chat(data) |
+| backend/app/services/ai_service.py | 整理历史、组装提示词、调用模型 | kb_service.search 与 client.chat.completions.create |
+| backend/app/services/kb_service.py | 加载向量模型、集合初始化与检索筛选 | 读取 data/kb，持久化到 data/chroma |
+| backend/app/config.py | 三个 LLM 配置与 BASE_DIR | 创建模型客户端、确定数据路径 |
+
+### 20.3 新配置与依赖：两种模型各做什么
+
+当前 requirements.txt 新增 openai、chromadb、sentence-transformers；前端新增 marked、dompurify。安装以项目依赖文件为准。本章讨论的是当前项目所固定版本的用法。
+
+```dotenv
+LLM_API_KEY=YOUR_LLM_API_KEY
+LLM_MODEL=YOUR_CHAT_MODEL_ID
+LLM_BASE_URL=https://YOUR_PROVIDER_HOST/v1
+```
+
+将上述三个字段加入已有 backend/.env，保留 DATABASE_URL、JWT_SECRET_KEY 等旧字段。这里全是占位值。LLM_BASE_URL 是兼容聊天接口的基础地址，LLM_MODEL 必须是该服务支持的模型标识。config.py 中三个字段都是没有默认值的 str，Settings() 会在导入时校验它们是否存在。
+
+| 模型 | 当前选择位置 | 输入和输出 |
+| --- | --- | --- |
+| 文本向量模型 | kb_service.py 中 BAAI/bge-small-zh-v1.5 | 文档或问题 → 数值向量，用于检索 |
+| 聊天模型 | settings.LLM_MODEL | system 与历史 messages → 回答文本 |
+
+配置聊天 API 密钥不会替代向量模型的安装和下载。向量模型在本地执行，聊天客户端根据 LLM_BASE_URL 向所配置的服务发送请求。
+
+### 20.4 启动和首次提问是两个时机
+
+```text
+启动后端
+  → 导入 api 路由 → 导入 ai_service → 导入 kb_service
+  → 创建模块级 _embedding_fn，加载/必要时下载 BGE 模型
+  → 应用 lifespan 启动预约扫描
+
+首次有效用户提问
+  → ai_service.chat → kb_service.search → get_collection
+  → 创建 data/chroma → 获取或创建 lab_kb
+  → 集合为空时读取 Markdown 并向量化写入
+  → 对问题向量化并检索 → 组装提示词 → 聊天模型
+```
+
+`BASE_DIR = Path(__file__).resolve().parent.parent` 在 config.py 中得到 backend 目录，因此数据位于 backend/data，不受从哪个工作目录启动的直接影响。
+
+这里有两个不同的缓存：`_embedding_fn` 是模型对象，`_collection` 是集合对象。它们是进程内变量；Chroma 文件才负责跨进程保留数据。早期使用默认向量模型时日志出现过 all-MiniLM-L6-v2 的 ONNX 下载路径，那是历史阶段，当前源码显式使用 BGE。
+
+### 20.5 请求体怎样变成 Python 对象
+
+```python
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+class ChatRequest(BaseModel):
+    messages: list[ChatMessage]
+```
+
+前端提交示例：
+
+```json
+{"messages":[{"role":"user","content":"实验室安全规范"}]}
+```
+
+FastAPI 把外层 JSON 校验成 ChatRequest，列表中的元素变成 ChatMessage，因此刚进入循环时能写 `message.role`。当前 role 是普通字符串，schema 没有限定 Literal 枚举；业务函数再筛掉非 user/assistant 的消息和空白内容。
+
+api/ai.py 同时声明了 get_current_user 和 get_db。登录身份在依赖中校验，db 参数当前没有交给聊天服务，不能据此认为模型已经接入实时预约查询。学生菜单限制也不等于接口限制为学生；后端要求的是有效登录用户。
+
+### 20.6 model_dump、reversed 和 next 怎样配合
+
+当前核心代码：
+
+```python
+history = []
+for message in data.messages:
+    if message.role in ("user", "assistant") and message.content.strip():
+        history.append(message.model_dump())
+
+question = next(
+    (item["content"] for item in reversed(history) if item["role"] == "user"), ""
+)
+```
+
+逐步理解：
+
+1. message 最初是 Pydantic 对象，可以用点号取属性。
+2. model_dump() 把它转换成字典，history 保存的是转换后的结果。
+3. reversed(history) 从后往前遍历，仍然取出字典，不会还原成对象。
+4. 生成器只产生 user 消息的 content；next 取第一条，得到最近一次用户问题。
+5. 没有匹配时使用默认值空字符串，避免 StopIteration。
+
+```python
+# history 中的一项
+item = {"role": "user", "content": "实验室安全规范"}
+question = item["content"]
+```
+
+`message.content.strip()` 当前只用于判空，存入 history 的仍是原始 content；它没有在后端把每条内容都替换成去空白后的值。若仅包含 assistant 消息，history 可以非空但 question 为空，此时跳过知识检索。这是当前实现的边界。
+
+### 20.7 get_collection：原文如何进入向量库
+
+`global _collection` 表示函数要修改模块级缓存。已有集合对象时直接返回；首次调用才建立目录并使用 PersistentClient。
+
+读取过程包含三个平行列表：
+
+| 列表 | 一项的例子 | 用途 |
+| --- | --- | --- |
+| ids | 安全规则 | path.stem，作为文档标识 |
+| docs | Markdown 文件的全文 | 文档正文，由 embedding_function 转成向量 |
+| metas | {"source": "安全规则.md"} | 记录来源，返回时拼入提示词 |
+
+`sorted(KB_DIR.glob("*.md"))` 只匹配当前目录的 Markdown；`read_text(encoding="UTF-8").strip()` 去掉首尾空白；空文档被跳过。每份非空文件整体作为一条文档，没有进一步切块。
+
+```python
+col.add(ids=ids, documents=docs, metadatas=metas)
+```
+
+这里没有显式传 embeddings，集合绑定的 `_embedding_fn` 会负责计算。`PersistentClient(path=str(CHROMA_DIR))` 将数据保存在指定目录，可以看到 chroma.sqlite3 和索引目录等文件；不需要为每篇 Markdown 找一个同名向量文件。
+
+只有空集合才执行初始入库。已有 4 条记录后，修改安全规则.md、增加第 5 个文件或重启服务，都不会自动触发更新已有集合。后续可按文档 ID 和内容摘要实现 upsert/删除同步；切换向量模型则应创建新索引并重新嵌入原文。本章仅讲解现状和改进方向，没有执行数据重建。
+
+### 20.8 query 返回的嵌套列表为什么取 [0]
+
+```python
+limit = min(5, col.count())
+res = col.query(query_texts=[query], n_results=limit)
+docs = (res.get("documents") or [[]])[0]
+metas = (res.get("metadatas") or [[]])[0]
+distances = (res.get("distances") or [[]])[0]
+```
+
+query_texts 接收问题列表。本次只传一个问题，所以返回值的外层只有这一组结果；每组里面才是多个匹配文档。下面只用于解释结构：
+
+```python
+res = {
+    "documents": [["安全文档正文", "预约文档正文"]],
+    "metadatas": [[{"source": "安全规则.md"}, {"source": "预约规则.md"}]],
+    "distances": [[0.2, 0.8]],
+}
+```
+
+`[0]` 取第一个问题的整组结果。`or [[]]` 在字段为 None 或外层空列表时提供一组空结果，避免直接访问空外层的第零项。它并不自动修复所有异常结构，例如内层本身为 None 或元数据项为 None 的情况仍需另行处理。
+
+### 20.9 zip、分数筛选、排序与取前两条
+
+```python
+score_parts = []
+for doc, meta, dist in zip(docs, metas, distances):
+    score = 1 / (1 + dist)
+    if score < 0.5:
+        continue
+    name = meta.get("source") or ""
+    score_parts.append({"score": score, "content": f"[{name}]\n{doc}"})
+score_parts.sort(key=lambda x: x["score"], reverse=True)
+final_parts = [item["content"] for item in score_parts[:2]]
+return "\n\n".join(final_parts)
+```
+
+zip 每次把相同位置的文档、元数据、距离组成三个值，依次赋给 doc、meta、dist。若只写 zip(docs, metas)，每次只有两个值，三个变量接收时就会报 expected 3, got 2。zip 默认在最短列表结束时停止。
+
+分数示例是演算值，不是实测结果：
+
+| distance | 1 / (1 + distance) | 当前是否保留 |
+| --- | --- | --- |
+| 0.2 | 约 0.833 | 是 |
+| 0.8 | 约 0.556 | 是 |
+| 1.0 | 0.5 | 是，代码仅排除小于 0.5 |
+| 1.2 | 约 0.455 | 否 |
+
+在非负距离下，该变换让距离越小分数越高。它不表示“模型有 83.3% 把握回答正确”，也不是统一标准的相似度。当前创建集合没有在业务代码中显式指定距离空间，具体含义要结合实际集合配置；不要在切换模型或度量后原样解释同一阈值。
+
+`sort` 修改原列表，lambda 指定按 score 排序，reverse=True 表示从高到低。`[:2]` 取最多两项；`final_parts` 只保留字符串，才能传给 join。全部被过滤时返回空字符串，聊天服务仍会调用模型，只是不追加知识内容。
+
+### 20.10 提示词、消息展开与模型返回
+
+```python
+system_prompt = SYSTEM_PROMPT
+knowledge = kb_service.search(query=question) if question else ""
+if knowledge:
+    system_prompt += "\n\n以下是检索到的实验室的资料: \n" + knowledge
+```
+
+每次请求先初始化局部 system_prompt，避免未赋值，也避免把前一次问题的资料不断积累到全局常量中。SYSTEM_PROMPT 规定回答范围，检索资料作为文本追加；检索本身没有改变模型参数。
+
+```python
+messages = [
+    {"role": "system", "content": system_prompt},
+    *history,
+]
+```
+
+`*history` 把列表中的每条字典展开到新列表。如果直接写 history，则会多出一层嵌套列表。模型客户端使用配置好的 model 发起调用，代码通过 `res.choices[0].message.content` 读取回答，再由 API 包装成 ChatMessage 返回。
+
+当前为同步、一次性响应，没有流式输出。知识检索和 get_client() 在 try 之前，它们抛出的非业务异常会进入全局 500 处理；模型调用部分的大部分异常被转换成“调用失败”。代码中空回答的 BusinessException 也会被同一个宽泛 except 捕获，所以实际提示会变成统一失败文案。定位错误应看完整堆栈和异常发生阶段，不要只看页面的 500。
+
+### 20.11 前端发送流程：状态与 Promise
+
+AIChat.vue 初始只有一条 assistant 欢迎语。handleSend 读取 `input.value.trim()`，空输入或正在发送就返回；随后把用户消息压入 messages，清空输入，设置 loading，再调用 chatApi。
+
+```text
+输入 → messages.push(user) → chatApi({messages: history})
+     → Axios 附带 token → 后端
+     → res.code === 200 → messages.push(res.data)
+     → nextTick 后滚动到底部 → finally 清除 loading
+```
+
+Axios 拦截器会把 HTTP 响应的 body 返回给页面，因此页面拿到的 res 已是统一业务结构。业务错误和 HTTP 错误应分别判断：BusinessException 当前通常是 HTTP 200、body.code 非 200；未捕获异常则可能是 HTTP 500，并让 Promise 被拒绝。
+
+页面 catch 结束失败请求的控制流，错误提示由拦截器负责；finally 无论成功失败都会复原按钮。失败时已加入的用户消息仍保留在历史中，没有自动恢复输入或创建失败气泡。`nextTick` 等 Vue 更新 DOM 后再读取滚动容器高度，否则新增气泡可能还没渲染。
+
+### 20.12 Markdown、v-html 与页面路由
+
+`marked.parse(text)` 将 Markdown 转成 HTML，`DOMPurify.sanitize(rawHtml)` 清理后再交给 v-html。用户和助手消息都走同一渲染函数，因此用户输入 Markdown 标题时也会以标题字号显示。模板中的 Enter 发送、Shift+Enter 换行来自按键修饰符。
+
+Layout 的 student 条件控制菜单显示，router 的 aichat 子路径控制页面加载。最终接口是否允许调用，由后端 get_current_user 决定。页面不持久化历史，也不会把用户自然语言转为预约表单提交。
+
+### 20.13 知识内容必须与实际业务核对
+
+当前四篇资料分别覆盖安全、开放时间、设备使用和预约规则。检索算法正确，并不保证资料内容正确。
+
+| 当前知识文本 | 当前代码行为 | 需要处理的差异 |
+| --- | --- | --- |
+| 预约规则写已通过也可本人取消 | cancel_reservation 只允许 status == 0 | 明确政策后修正文档或实现 |
+| 设备使用写约设备同时占用实验室 | 创建预约分别查询设备冲突和整间实验室冲突 | 文档规则尚未落实为数据库校验 |
+| 开放时间写死在 Markdown | 实验室表也有可维护的 open_time/close_time | 两个来源没有同步机制 |
+
+此处记录审查结果，未擅自调整业务政策或重建已有向量。即使修正原文，也要同步索引后才能让检索读取新规则。
+
+### 20.14 从当前问答继续接入智能体
+
+建议先为实时实验室查询提供明确的输入、输出模型，作为只读工具；再让模型按问题决定是否调用，并把工具结果加入消息继续生成回答。预约写入工具要复用已有身份、设备归属、时段冲突和事务保护。
+
+工具参数应接受资源 ID、日期、时段等明确字段，用户身份来自服务端登录上下文。涉及预约、取消的操作需要让用户确认具体对象与时段，并处理工具失败和重复提交。上述工具定义、调用循环和确认交互是后续开发方向，当前源码尚未实现。
+
+### 20.15 从零复现与本章验收
+
+实现顺序：配置和依赖 → schemas → 最小模型调用 → 登录聊天路由 → API 合并 → 前端 API/页面/菜单 → 知识原文 → 集合初始化 → 检索筛选 → 拼入提示词 → 异常与状态处理。
+
+验收时分别观察：浏览器 Network 的请求体和响应、Uvicorn 的异常堆栈、实际检索资料、模型收到的消息。可在排序后、return 前临时添加：
+
+```python
+print("score_parts:", score_parts, flush=True)
+```
+
+先保存文件，再确认后端加载了新代码，然后发送问题。输出在后端终端；只启动应用不会自动执行 search，空集合提前 return 时也不会走到末尾打印。筛选后的空列表若执行到 print，仍会输出 []。当前保存的源码没有这条调试 print，示例需要自己加入后才会生效。
+
+必须覆盖：最近一条 user 消息、空白输入、空集合、多个返回文档、全部低于阈值、真实接口失败及首次模型加载耗时。向量目录和四条记录只能证明某阶段的入库结果，不能替代当前模型配置下的检索及完整聊天验收。
+
+### 20.16 复习练习
+
+1. 分别画出导入模型、建立集合、查询向量、调用聊天模型四个时机。
+2. 用两个 ChatMessage 演示 model_dump 前后取字段方式。
+3. 用三个距离手算分数，并解释为什么最终只取两条。
+4. 分别说明浏览器 HTTP 500 和 HTTP 200、body.code=500 的区别。
+5. 修改一篇 Markdown 后，解释为何重启还可能读到旧内容。
+6. 查找预约规则与 cancel_reservation 的差异，写出需要同步的文件和索引步骤。
+
+### 20.17 当前新增代码快照
+
+以下快照从本次核对的工作区文件生成，日期为 2026-10-23；用于对照前面的讲解。旧章节快照保留历史，不要混合不同阶段的模型配置与消息处理方式。
+
+#### backend/app/schemas/ai.py
+
+```python
+from pydantic import BaseModel
 
 
+class ChatMessage(BaseModel):
+    role: str
+    content: str
 
 
+class ChatRequest(BaseModel):
+    messages: list[ChatMessage]
+```
+
+#### backend/app/api/ai.py
+
+```python
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from app.common.response import Response
+from app.database import get_db
+from app.dependencies.auth import get_current_user
+from app.models.user import User
+from app.schemas.ai import ChatMessage, ChatRequest
+from app.services import ai_service
+
+router = APIRouter(prefix="/ai", tags=["AI相关的api"])
 
 
+@router.post("/chat")
+def chat(
+    data: ChatRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    content = ai_service.chat(data=data)
+    return Response.success(data=ChatMessage(role="assistant", content=content))
+```
+
+#### backend/app/services/ai_service.py
+
+```python
+from openai import OpenAI
+from app.common.exceptions import BusinessException
+from app.config import settings
+from app.schemas.ai import ChatMessage, ChatRequest
+from app.services import kb_service
+
+SYSTEM_PROMPT = """你是智能实验室预约系统的助手，回答要简洁。
+如果下面提供了实验室资料，请依据资料回答，不要编造资料里没有的时间、规则、设备。
+你目前查不到真实的实验室空闲、设备库存、预约记录。
+如果用户问现在/哪些实验室能约、某台设备此刻有没有空，请说明去「实验室列表」查看。
+除了实验室相关的问题之外，不要回复无关的问题。
+"""
 
 
+def get_client() -> OpenAI:
+    """创建OPENAI的客户端"""
+    if not settings.LLM_API_KEY:
+        raise BusinessException(message="未获取到大模型的APIKey")
+    return OpenAI(api_key=settings.LLM_API_KEY, base_url=settings.LLM_BASE_URL)
 
+
+def chat(data: ChatRequest):
+    """大模型对话"""
+    if not data.messages:
+        raise BusinessException(message="对话内容为空")
+    history = []
+    for message in data.messages:
+        if message.role in ("user", "assistant") and message.content.strip():
+            history.append(message.model_dump())
+    if not history:
+        raise BusinessException(message="请输入您要对话的内容")
+
+    # 取出用户最新的一条提问内容
+    question = next(
+        (item["content"] for item in reversed(history) if item["role"] == "user"), ""
+    )
+
+    system_prompt = SYSTEM_PROMPT
+    knowledge = kb_service.search(query=question) if question else ""
+    if knowledge:
+        system_prompt += "\n\n以下是检索到的实验室的资料: \n" + knowledge
+
+    client = get_client()
+
+    try:
+        res = client.chat.completions.create(
+            model=settings.LLM_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                *history,
+            ],
+        )
+        content = res.choices[0].message.content
+        if not content:
+            raise BusinessException(message="大模型没有返回内容")
+        return content
+
+    except Exception:
+        raise BusinessException(message="大模型调用失败, 请稍后重试")
+```
+
+#### backend/app/services/kb_service.py
+
+```python
+import chromadb
+from chromadb.api.models.Collection import Collection
+from chromadb.utils import embedding_functions
+from app.config import BASE_DIR
+
+KB_DIR = BASE_DIR / "data" / "kb"
+CHROMA_DIR = BASE_DIR / "data" / "chroma"
+
+_collection = None
+_embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
+    model_name="BAAI/bge-small-zh-v1.5"
+)
+
+
+def get_collection() -> Collection:
+    """向量库的初始化"""
+    global _collection
+    if _collection is not None:
+        return _collection
+    KB_DIR.mkdir(parents=True, exist_ok=True)
+    CHROMA_DIR.mkdir(parents=True, exist_ok=True)
+    client = chromadb.PersistentClient(path=str(CHROMA_DIR))
+    col = client.get_or_create_collection(
+        name="lab_kb", embedding_function=_embedding_fn
+    )
+    if col.count() == 0:
+        ids = []
+        docs = []
+        metas = []
+        for path in sorted(KB_DIR.glob("*.md")):
+            text = path.read_text(encoding="UTF-8").strip()
+            if not text:
+                continue
+            docs.append(text)
+            ids.append(path.stem)
+            metas.append({"source": path.name})
+        if docs:
+            col.add(ids=ids, documents=docs, metadatas=metas)
+    _collection = col
+    return _collection
+
+
+def search(query: str):
+    """根据关键字去检索向量库"""
+    col = get_collection()
+    if col.count() == 0:
+        return ""
+    limit = min(5, col.count())
+    res = col.query(query_texts=[query], n_results=limit)
+    docs = (res.get("documents") or [[]])[0]  # [list]
+    metas = (res.get("metadatas") or [[]])[0]  # [list]
+    distances = (res.get("distances") or [[]])[0]
+    """
+    以下是检索出来的资料:
+    [预约规则.md]
+
+    # 实验室预约规则...
+
+
+    [安全规范.md]
+
+    安全规范....
+    """
+    score_parts = []
+    for doc, meta, dist in zip(docs, metas, distances):
+        # 0-1    越接近1表示越相关
+        score = 1 / (1 + dist)
+        if score < 0.5:
+            continue
+        name = meta.get("source") or ""
+        score_parts.append({"score": score, "content": f"[{name}]\n{doc}"})
+    score_parts.sort(key=lambda x: x["score"], reverse=True)
+    final_parts = [item["content"] for item in score_parts[:2]]
+    return "\n\n".join(final_parts)
+```
+
+#### frontend/src/api/ai.js
+
+```javascript
+import request from '@/utils/request'
+
+export function chatApi(data) {
+  return request({
+    url: '/api/ai/chat',
+    method: 'post',
+    data,
+    timeout: 30000
+  })
+}
+```
+
+#### frontend/src/views/AIChat.vue
+
+```vue
+<template>
+  <div>
+    <el-card>
+      <template #header>
+        <div style="font-size: 16px; font-weight: bold">
+          <span>AI智能助手</span>
+        </div>
+      </template>
+      <div
+        ref="listRef"
+        style="
+          height: 480px;
+          overflow-y: auto;
+          padding: 8px 4px;
+          background-color: #fafafa;
+          border-radius: 6px;
+        "
+      >
+        <div
+          v-for="(item, index) in messages"
+          :key="index"
+          :style="{
+            display: 'flex',
+            justifyContent: item.role === 'user' ? 'flex-end' : 'flex-start',
+            marginBottom: '12px'
+          }"
+        >
+          <div
+            :style="{
+              maxWidth: '70%',
+              padding: '10px 12px',
+              borderRadius: '8px',
+              backgroundColor: item.role === 'user' ? '#409eff' : '#fff',
+              color: item.role === 'user' ? '#fff' : '#333',
+              lineHeight: '1.6',
+              boxShadow: '0 1px 2px rgba(0 ,0, 0, 0.06)'
+            }"
+            v-html="parseMarkdown(item.content)"
+          ></div>
+        </div>
+      </div>
+      <!-- 输入框 -->
+      <div style="margin-top: 12px; display: flex; gap: 8px; align-items: flex-end">
+        <el-input
+          v-model="input"
+          type="textarea"
+          :rows="2"
+          placeholder="问问实验室怎么预约、开放时间..."
+          @keydown.enter.exact.prevent="handleSend"
+          @keydown.enter.shift.stop
+        ></el-input>
+        <el-button type="primary" :loading="loading" @click="handleSend">发送</el-button>
+      </div>
+    </el-card>
+  </div>
+</template>
+
+<script setup>
+import { ref, nextTick } from 'vue'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify' // 过滤危险的 HTML，防止 XSS 攻击
+import { chatApi } from '@/api/ai'
+
+// 将 markdown 字符串转换为安全的 HTML 字符串
+const parseMarkdown = (text) => {
+  if (!text) return ''
+  // 使用 marked 解析，然后用 DOMPurify 清理
+  const rawHtml = marked.parse(text)
+  return DOMPurify.sanitize(rawHtml)
+}
+
+const messages = ref([
+  {
+    role: 'assistant',
+    content:
+      '您好，我是实验室助手。你可以向我提问怎么预约、取消实验室或者设备。具体实验室信息请到【实验室列表】页查看'
+  }
+])
+
+const input = ref('')
+const loading = ref(false)
+const listRef = ref()
+
+const scrollToBottom = () => {
+  nextTick(() => {
+    const elem = listRef.value
+    if (elem) elem.scrollTop = elem.scrollHeight
+  })
+}
+
+const handleSend = async () => {
+  const text = input.value.trim()
+  if (!text || loading.value) return
+  messages.value.push({ role: 'user', content: text })
+  input.value = ''
+  loading.value = true
+  scrollToBottom()
+  try {
+    const history = messages.value.filter(
+      (item) => item.role === 'user' || item.role === 'assistant'
+    )
+    const res = await chatApi({ messages: history })
+    if (res.code === 200) {
+      messages.value.push(res.data)
+      scrollToBottom()
+    }
+  } catch {
+    // 请求失败时由请求拦截器提示错误。
+  } finally {
+    loading.value = false
+  }
+}
+</script>
+```
+
+
+<a id="21-ai-fixes"></a>
+
+## 21. 新增教程：过期扫描、本轮修补与旧章节校正
+
+本章回看此前实现和修补。这里只更新文档；当前业务代码的修复状态以本次读取的文件为依据。需要区分“本轮已修复”“只是提出建议”“历史测试曾通过”。
+
+### 21.1 过期扫描为什么独立于 HTTP 请求
+
+旧流程只有本人取消与管理员审核。新增 `expire_pending_reservations()` 用独立 Session 扫描待审核记录，不需要用户点击按钮，也不使用接口 Depends 注入的 db。
+
+当前判定规则是：日期早于今天，或者日期是今天且结束时间不晚于当前小时分钟，就把 status 从 0 改为 3。采用的是预约结束时间，已开始但未结束的申请仍可能留在待审核。日期与时间是字符串，比较依赖规范格式，尚未解决前章指出的非法日期和零时长校验。
+
+状态 3 同时表示用户取消和扫描过期；当前模型没有取消来源字段。状态 1、2、3 不在扫描范围。
+
+### 21.2 changed 初始化与事务提交
+
+```python
+changed = False
+for item in items:
+    if item.date < today or (item.date == today and item.end_time <= time):
+        item.status = 3
+        changed = True
+if changed:
+    db.commit()
+```
+
+曾经 changed 只在 if 分支中赋值：无记录或所有记录未过期时，该分支一次也不进入，执行 if changed 就出现 UnboundLocalError。初始 False 表示“目前没有修改”，发现过期记录再改为 True。
+
+多个记录修改后统一 commit；无修改则无需提交。finally 中 close 负责释放 Session。当前没有单独捕获扫描异常并重试，函数失败会继续向上抛出。
+
+### 21.3 asyncio 与 lifespan：谁启动，谁负责关闭
+
+```python
+async def run_expire_scan():
+    while True:
+        expire_pending_reservations()
+        await asyncio.sleep(60)
+```
+
+启动时第一轮立即执行，随后每次扫描结束等待 60 秒，实际间隔还包含扫描耗时。await sleep 期间让出事件循环；它前面的同步数据库函数仍在事件循环线程中执行，不会因为外层写了 async 自动变成异步数据库访问。
+
+main.py 的关键部分：
+
+```python
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(reservation_service.run_expire_scan())
+    try:
+        yield
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+```
+
+yield 之前安排启动任务，yield 之后对应退出清理。cancel 发出取消请求，await 等待协程真正结束；suppress 只处理预期的 CancelledError，其他异常不会因此消失。
+
+曾经的 changed 异常会令任务退出；如果没有及时取回任务异常，就可能看到 Task exception was never retrieved。生命周期清理解决取消收尾，不能代替扫描循环的异常恢复。Ctrl+C、重载时也可能出现服务主任务的取消堆栈，要结合前后日志判断，不能把所有 CancelledError 都当成业务失败或全部忽略。
+
+多进程部署时每个应用进程都可能启动自己的扫描任务。扫描也会与管理员审核或本人取消竞争：读到 status=0 后直接修改对象并提交，未使用带原状态条件的原子更新。后续可统一状态转换、异常日志和任务调度策略。
+
+### 21.4 本轮错误与正确写法对照
+
+| 故障 | 原因 | 当前保存的修补 |
+| --- | --- | --- |
+| history 元素没有 role 属性 | model_dump 后是 dict | item["role"]、item["content"] |
+| system_prompt 未赋值 | 局部变量在 += 前没有初始值 | 每次请求设置 SYSTEM_PROMPT |
+| expected 3, got 2 | zip 两个列表却解包三个变量 | zip(docs, metas, distances) |
+| join 遇到 dict | 拼接了 score_parts 字典列表 | 提取 content 后 join(final_parts) |
+| 检索仅返回首项 | return 曾缩进在循环内 | 循环结束后统一筛选和返回 |
+| changed 未赋值 | 仅在发现过期时赋值 | 在循环前初始化 False |
+| 关闭时只发取消请求 | 未等待任务退出 | finally 中 cancel 后 await，并处理预期取消 |
+| Vue 未处理 Promise 拒绝 | handleSend 只有 finally | catch 结束失败流程，统一拦截器提示；finally 清除 loading |
+| 看不到调试打印 | 保存文件中没有该语句，或未运行到它 | 保存、确认重载、发请求并查看后端终端；print 放在 return 前 |
+
+相同报错再次出现时，先比对堆栈行与磁盘内容，再检查 IDE 未保存缓冲区、运行进程和加载路径。此前 zip 问题重复出现时，重新读取文件仍能看到两个参数；不能只凭“上一轮改过”就认定当前磁盘正确。
+
+### 21.5 旧章节哪些结论需要更新
+
+| 旧位置或结论 | 本轮更新 |
+| --- | --- |
+| README 仅说 Agent 是后续计划 | 已补 AI 问答和静态 RAG；工具调用仍为后续 |
+| 第 3 节和 README 只配置数据库/JWT | 当前启动还要求三个 LLM 字段，完整模板已同步 |
+| 第 6、19 节启动示例只创建 FastAPI | 当前 lifespan 启动扫描，AI 路由导入会加载模型 |
+| 第 18 节只有手工取消/审核 | 增加自动过期 0 → 3，继续保留已有状态编码 |
+| 最初依赖默认 ONNX 模型 | 当前显式使用 BGE；向量集合须匹配其嵌入模型 |
+| 添加 Markdown 就会自动更新知识 | 当前只在空集合初始化，修改文件需要同步索引 |
+| 第 18 节预约页 loading/catch 等待修补 | 本轮仅 AI 页修补；两个预约页待办未因此完成 |
+| 第 17 节 status=False 筛选等问题 | lab_service 仍使用 if status，该项未修；移除未使用导入不代表修复筛选 |
+| 本轮其他 diff | user_service 仅空行整理、lab_service 移除未用导入，不应宣称业务变化 |
+
+早期配置和代码快照作为学习阶段保留，章节入口已加更新说明。当前完整运行请以 README 新配置、工作区代码和本章快照为准。
+
+### 21.6 检查记录与未完成项
+
+2026-10-23 本次文档更新逐文件核对了 AI schema/API/service、知识检索、前端发送、路由与菜单、模型配置、过期扫描及 lifespan。当前可确认的修补均已列入 21.4；对照源码核实了第 18 节仍存在的预约页面问题和知识原文冲突。
+
+此前对话曾在内存数据库中执行 6 项过期扫描/生命周期检查，并执行多轮 AI 检索和接口隔离验证（其中一轮 8 项，重复修补后又做了 3 项）。它们是历史临时检查，次数不能相加当成一个新的测试套件，也不能当作本次真实模型联调。本次新增验证集中于文档结构、内部链接和快照与源码的一致性；没有调用真实大模型或改动数据库。
+
+尚待验收：BGE 模型与现有集合兼容性、真实中文检索阈值、聊天服务连通性与延迟、30 秒前端超时、知识原文同步索引、审核/取消/扫描竞争、扫描异常恢复、多进程任务重复，以及浏览器完整操作流程。
+
+本轮没有改变“已通过预约能否取消”“设备预约是否占用整个实验室”等业务政策。先统一知识原文和业务实现，再把这些服务暴露为智能体工具，才能保证问答建议与实际操作一致。
+
+### 21.7 当前过期扫描与入口快照
+
+#### backend/app/services/reservation_service.py（新增扫描部分）
+
+该片段复用模块中的 asyncio、datetime、SessionLocal、Reservation 导入。
+
+```python
+def expire_pending_reservations():
+    """批量取消过期的预约"""
+    db = SessionLocal()
+    try:
+        now = datetime.now()
+        today = now.strftime("%Y-%m-%d")
+        time = now.strftime("%H:%M")
+        items = db.query(Reservation).filter(Reservation.status == 0).all()
+        changed = False
+        for item in items:
+            if item.date < today or (item.date == today and item.end_time <= time):
+                item.status = 3
+                changed = True
+        if changed:
+            db.commit()
+    finally:
+        db.close()
+
+
+async def run_expire_scan():
+    while True:
+        expire_pending_reservations()
+        await asyncio.sleep(60)
+```
+
+#### backend/app/main.py
+
+```python
+import asyncio
+from contextlib import asynccontextmanager, suppress
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
+from fastapi.staticfiles import StaticFiles
+from app.config import UPLOAD_DIR
+from app.models.user import User
+from app.models.lab import Lab
+from app.models.equipment import Equipment
+from app.models.reservation import Reservation
+from app.database import engine, Base
+from app.api import api
+from app.common.exceptions import (
+    BusinessException,
+    business_exception_handler,
+    http_exception_handler,
+    validation_exception_handler,
+    global_exception_handler,
+)
+from app.services import reservation_service
+
+Base.metadata.create_all(bind=engine)  # 自动创建数据库表结构
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(
+        reservation_service.run_expire_scan()
+    )  # 启动项目 开启异步的扫描任务
+    try:
+        yield
+    finally:
+        task.cancel()  # 关闭项目 同时取消异步任务
+        with suppress(asyncio.CancelledError):
+            await task
+
+
+app = FastAPI(lifespan=lifespan)
+
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,  # 允许的前端源，不要直接写 ["*"]
+    allow_credentials=True,  # ✅ 关键：允许前端携带 Authorization token
+    allow_methods=["*"],  # 允许所有请求方法 GET POST PUT DELETE OPTIONS
+    allow_headers=["*"],  # 允许所有请求头（包含Authorization）
+)
+
+app.include_router(api)
+
+# 注册异常处理器
+app.add_exception_handler(BusinessException, business_exception_handler)
+app.add_exception_handler(HTTPException, http_exception_handler)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+# 全局的异常兜底, 必须放在最后注册!!!
+app.add_exception_handler(Exception, global_exception_handler)
+
+# 挂载静态的文件目录 http://127.0.0.1:8000/uploads/xxx.jpg
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+
+@app.get("/")
+def root():
+    return {"message": "Hello, World!"}
+```

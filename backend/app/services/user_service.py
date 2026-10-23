@@ -1,5 +1,4 @@
 from operator import or_
-
 from app.common.exceptions import BusinessException
 from app.common.response import PageResponse
 from app.models.user import User
@@ -12,7 +11,6 @@ from app.schemas.user import (
 )
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-
 from app.utils.password import hash_password, verify_password
 
 

@@ -1,8 +1,10 @@
 # Lab_Agent — 实验室智能预约管理系统
 
-基于 FastAPI、Vue 3、MySQL 的实验室管理与预约项目。已实现用户与资源管理、实验室和设备浏览，以及普通用户申请、查询和取消预约、管理员通过和拒绝预约的主要业务流程。Agent 智能交互仍为后续计划。
+基于 FastAPI、Vue 3、MySQL 的实验室管理与预约项目。已实现主要预约业务流程，并新增 AI 对话、Markdown 知识库向量检索（RAG）和待审核预约过期扫描，为后续智能体接入准备基础。当前 AI 根据静态资料回答问题；实时资源查询、工具调用和自动预约尚未实现。
 
-文档更新：2026-10-21。
+文档更新：2026-10-23。
+
+[AI 与知识库入门教程](demo_1代码学习_复习笔记.md#20-ai-rag) · [本轮修补与旧章节更新](demo_1代码学习_复习笔记.md#21-ai-fixes) · [AI 配置与验收](#ai-rag-setup)
 
 [学习与复习笔记](demo_1代码学习_复习笔记.md) · [逻辑修补教程](demo_1代码学习_复习笔记.md#17-logic-fixes) · [预约查询、取消与审核教程](demo_1代码学习_复习笔记.md#18-reservation-workflow)
 
@@ -19,10 +21,13 @@
 | 预约审核管理 | 管理员查询全部用户预约、查看预约人、通过或拒绝待审核预约；默认显示待审核 |
 | 数据一致性 | 创建预约的事务锁与死锁重试、用户名数据库唯一约束及升级脚本、有预约历史的资源和用户禁止删除 |
 | 表单和登录修补 | 设备新增重置、正整数容量、删除确认异常处理、JWT UTC 有效期、旧请求 401 防止误清新登录状态 |
+| AI 智能助手 | 登录后调用 POST /api/ai/chat；历史消息、静态知识检索、模型回答、Markdown 渲染 |
+| 本地知识库 | backend/data/kb 的 Markdown 文档，BGE 中文向量模型，Chroma 持久化，最多检索 5 条并筛选前 2 条 |
+| 过期扫描 | 启动后扫描待审核预约，再在每轮扫描结束后等待 60 秒；按预约结束时间判断过期并转为状态 3 |
 
-**预约主要流程已接通。** 新记录为待审核（status=0）；本人可取消为 3，管理员可通过为 1 或拒绝为 2。当前仅允许操作待审核记录，取消会保留历史记录，已通过的预约不能再取消。状态 0、1 占用同资源时段，2、3 不占用；整间实验室与其设备仍分别检查冲突，设备 quantity 尚未用于按数量预约。
+**预约主要流程已接通。** 新记录为待审核（status=0）；本人可取消为 3，管理员可通过为 1 或拒绝为 2；后台扫描也会把已过期的待审核记录转为 3。当前仅允许操作待审核记录，取消会保留历史记录，已通过的预约不能再取消。状态 0、1 占用同资源时段，2、3 不占用；整间实验室与其设备仍分别检查冲突，设备 quantity 尚未用于按数量预约。
 
-前一轮的 7 项指定修补与本轮新增业务详见学习笔记第 17、18 节。日期有效性、零时长、部分基础数据约束、旧会话失效和上传认证等仍需完善；本轮审核与取消的并发状态更新也尚未保护。功能已写出不代表真实 MySQL 并发和浏览器完整验收已完成。
+预约历史修补见学习笔记第 17、18 节；AI、过期扫描和本轮修补见第 20、21 节。日期有效性、零时长、部分基础数据约束、旧会话失效和上传认证等仍需完善；本轮审核与取消的并发状态更新也尚未保护。功能已写出不代表真实 MySQL 并发和浏览器完整验收已完成。
 
 ## 1. 技术栈
 
@@ -40,6 +45,9 @@
 | PyJWT | 2.13.0 |
 | python-multipart | 0.0.32，文件上传表单解析 |
 | cryptography | 50.0.1 |
+| openai | 3.14.1，调用兼容 Chat Completions 的接口 |
+| chromadb | 1.5.9，本地持久化向量库 |
+| sentence-transformers | 6.0.1，加载 BAAI/bge-small-zh-v1.5 |
 | MySQL | 建议 MySQL 8.x |
 
 ### 前端
@@ -53,6 +61,7 @@
 | Vue Router | 5.x |
 | Element Plus | 2.x |
 | Axios | 1.x |
+| marked / DOMPurify | Markdown 转 HTML，再清理 HTML；版本以 package-lock.json 为准 |
 
 建议使用项目提供的 `requirements.txt` 和 `package-lock.json` 安装依赖，以尽量保持运行环境一致。
 
@@ -78,6 +87,9 @@ Lab_Agent/
 │   ├── .env                # 本地创建，不提交
 │   ├── .venv/              # Python 虚拟环境
 │   ├── uploads/            # 用户上传文件
+│   ├── data/
+│   │   ├── kb/            # 知识库 Markdown 原文
+│   │   └── chroma/        # 运行时生成的向量库与索引
 │   └── requirements.txt
 │
 ├── frontend/
@@ -372,6 +384,11 @@ DATABASE_URL=mysql+pymysql://lab_agent:ChangeMe123@localhost:3306/lab_agent?char
 JWT_SECRET_KEY=REPLACE_WITH_A_RANDOM_SECRET_KEY
 JWT_EXPIRE_HOURS=24
 JWT_ALGORITHM=HS256
+
+# 大模型接口：请替换为所用服务的实际值
+LLM_API_KEY=YOUR_LLM_API_KEY
+LLM_MODEL=YOUR_CHAT_MODEL_ID
+LLM_BASE_URL=https://YOUR_PROVIDER_HOST/v1
 ```
 
 参数说明：
@@ -382,6 +399,11 @@ JWT_ALGORITHM=HS256
 | JWT_SECRET_KEY | JWT 签名密钥 | 是 |
 | JWT_EXPIRE_HOURS | Token 有效时间，单位小时 | 否，默认 24 |
 | JWT_ALGORITHM | JWT 签名算法 | 否，默认 HS256 |
+| LLM_API_KEY | 大模型接口密钥，仅保存在后端 | 是 |
+| LLM_MODEL | 服务端支持的聊天模型标识 | 是 |
+| LLM_BASE_URL | 兼容 Chat Completions 的服务基础地址 | 是 |
+
+当前 Settings 在导入时校验配置，这三个 LLM 字段没有默认值，即使暂时不打开 AI 页面也必须配置。示例域名及模型 ID 是占位符，不能直接用于请求。向量模型名称在 kb_service.py 中设置，与 LLM_MODEL 是两个独立配置。
 
 其中数据库连接字符串格式为：
 
@@ -850,7 +872,9 @@ Windows 可以检查端口：
 Test-NetConnection 127.0.0.1 -Port 3306
 ```
 
-### 9.5 缺少 DATABASE_URL 或 JWT_SECRET_KEY
+### 9.5 缺少 DATABASE_URL、JWT_SECRET_KEY 或 LLM 配置
+
+2026-10-23 更新：当前还必须提供 LLM_API_KEY、LLM_MODEL、LLM_BASE_URL，完整示例见第 6.4 节。缺失字段会在 Settings() 初始化时阻止应用启动。
 
 如果 FastAPI 启动时出现 Pydantic 配置验证错误，请检查：
 
@@ -956,6 +980,9 @@ DATABASE_URL=mysql+pymysql://lab_agent:YOUR_PASSWORD@localhost:3306/lab_agent?ch
 JWT_SECRET_KEY=REPLACE_WITH_YOUR_RANDOM_SECRET
 JWT_EXPIRE_HOURS=24
 JWT_ALGORITHM=HS256
+LLM_API_KEY=YOUR_LLM_API_KEY
+LLM_MODEL=YOUR_CHAT_MODEL_ID
+LLM_BASE_URL=https://YOUR_PROVIDER_HOST/v1
 ```
 
 ### frontend/.env.example
@@ -1048,7 +1075,7 @@ GitHub：
 
 https://github.com/JasonCauly/Lab_Agent
 
-预约主要业务代码已写出。下一阶段重点是完善剩余约束、保护审核与取消的并发状态更新、完成真实浏览器验收，并在空目录和独立学习数据库中复现全项目；Agent 智能交互尚未接入。最新逐步讲解、代码快照和验收清单见 [学习笔记第 18 节](demo_1代码学习_复习笔记.md#18-reservation-workflow)。
+预约主要业务代码、AI 对话和静态知识库检索已写出。下一阶段重点是完善剩余约束、保护审核/取消/过期扫描的并发状态更新、校准知识原文与业务规则、完成真实浏览器验收，并接入智能体业务工具。最新逐步讲解、代码快照和验收清单见 [AI 教学第 20 节](demo_1代码学习_复习笔记.md#20-ai-rag) 与 [修补复盘第 21 节](demo_1代码学习_复习笔记.md#21-ai-fixes)。
 
 <a id="runtime-flow"></a>
 
@@ -1214,3 +1241,100 @@ flowchart TD
 ```
 
 图片上传、业务资料保存、图片读取是不同请求；读取图片不经过 Axios 响应拦截器，上传文件本身也不直接更新用户或资源记录。
+
+
+<a id="ai-rag-setup"></a>
+
+## 16. AI 智能助手、知识库与智能体准备
+
+### 16.1 当前能力与入口
+
+学生菜单新增“AI智能助手”，页面路径为 `/manager/aichat`。后端 `POST /api/ai/chat` 使用 `get_current_user` 校验登录，没有限定 student 角色；菜单可见性与接口权限是不同层面的规则。
+
+当前功能接收历史消息，检索静态资料，再调用聊天模型。没有注册业务工具，也没有调用实验室实时查询、创建预约或取消预约的服务函数。对话历史只保存在页面内存，刷新后恢复欢迎语；未写入聊天记录表。
+
+```mermaid
+flowchart LR
+    A[AIChat.vue 发送问题] --> B[chatApi 与 Axios]
+    B --> C[POST /api/ai/chat 登录校验]
+    C --> D[ai_service.chat 整理历史]
+    D --> E[kb_service.search 检索资料]
+    E --> F[Chroma 与本地向量模型]
+    F --> G[最多两段资料加入 system 消息]
+    G --> H[聊天模型 API]
+    H --> I[统一响应与页面渲染]
+```
+
+### 16.2 配置与首次启动
+
+1. 在 backend 中使用虚拟环境安装 `requirements.txt`，在 frontend 中运行 `npm install`，安装与当前代码匹配的依赖。
+2. 按第 6.4 节配置三个 LLM 字段；保留数据库和 JWT 配置。接口密钥只用于后端请求。
+3. 确认 `backend/data/kb` 中有预约规则、安全规则、开放时间、设备使用四份 Markdown 文件。
+4. 启动后端。当前 `SentenceTransformerEmbeddingFunction` 在模块顶层实例化，导入路由时就可能加载或下载 `BAAI/bge-small-zh-v1.5`；模型准备失败可能发生在应用启动阶段。
+5. 登录后在 AI 页面提问，首次 `search()` 才进入 `get_collection()` 创建 `backend/data/chroma`、读取原文并写入空集合。
+
+聊天模型和向量模型分别负责生成回答、将文本转为检索向量。此前日志里的 `all-MiniLM-L6-v2/onnx.tar.gz` 属于旧版默认向量模型下载记录；当前源码已经显式选择 BGE。下载进度完成只说明模型文件准备的一部分完成，不能据此判断整个聊天请求成功。
+
+### 16.3 数据目录与更新方式
+
+| 位置 | 内容 | 当前行为 |
+| --- | --- | --- |
+| backend/data/kb | 人工维护的 Markdown 原文 | 只扫描当前目录的 `*.md`；一篇非空文件对应一条文档 |
+| backend/data/chroma | chroma.sqlite3 及索引目录等运行数据 | PersistentClient 自动持久化，路径来自 backend 的 BASE_DIR |
+| 模型缓存 | 下载后的向量模型文件 | 由模型加载库管理，与 Chroma 文档数据库分开 |
+| `_collection` | 当前进程中的集合对象 | 后续调用复用，重启进程后重新取得持久化集合 |
+
+当前仅在 `col.count() == 0` 时批量添加文档。修改、增加或删除 Markdown 后，已有集合不会自动同步，单纯重启也不会覆盖原向量。需另行实现文档同步，或备份原数据后使用新集合重新索引。切换向量模型时也应重新生成同一检索空间中的文档向量；即使两个模型维度相同，也不能混用其向量。当前没有自动重建命令，本次文档更新没有删除或重建数据库。
+
+当前代码最多检索 5 条，用 `1 / (1 + distance)` 计算排序分数，保留分数不低于 0.5 的结果，再取前 2 条。该分数是自定义的距离变换，不是回答正确率；阈值需结合集合距离度量、模型和中文问题样例校准。
+
+### 16.4 请求与响应示例
+
+在已登录会话中提交：
+
+```json
+{"messages":[{"role":"user","content":"实验室安全规范"}]}
+```
+
+成功响应的结构示意（正文由模型生成）：
+
+```json
+{"code":200,"message":"请求成功","data":{"role":"assistant","content":"根据实验室资料整理的回答……"}}
+```
+
+页面调用 `marked.parse()` 转换 Markdown，再通过 `DOMPurify.sanitize()` 清理后交给 `v-html`。发送按钮显示 loading，处理函数捕获被拒绝的请求，`finally` 恢复按钮状态；具体失败提示仍由 Axios 拦截器展示。接口当前为一次性响应，前端超时设置为 30 秒，模型准备和推理的总耗时可能超过它。
+
+### 16.5 本轮修补与常见故障
+
+| 现象 | 已核对的原因与处理 |
+| --- | --- |
+| dict 没有 role/content 属性 | `model_dump()` 后使用 `item["role"]` 和 `item["content"]` |
+| system_prompt 未初始化 | 每次请求先执行 `system_prompt = SYSTEM_PROMPT` |
+| expected 3, got 2 | 三个变量必须对应 `zip(docs, metas, distances)` 三个列表 |
+| join 报字典类型错误 | 拼接提取出的字符串列表 `final_parts` |
+| 只返回第一条资料 | return 位于循环外；当前再按分数选前两条 |
+| 没有向量目录 | 先确认已进入 search，再看初始化或模型错误；配置路径为 backend/data/chroma |
+| print 没输出 | 确认文件已保存、函数已调用、打印在 return 前；在 Uvicorn 终端查看，可加 flush=True |
+| Task exception was never retrieved | 曾由 changed 未初始化导致；现已在循环前设为 False，但其他未处理异常仍会终止扫描任务 |
+| 退出时 CancelledError | 查看是否与停止/重载及新进程启动相邻；当前 lifespan 会取消并等待扫描任务。运行中异常仍需看完整堆栈 |
+
+### 16.6 待校准的知识内容与业务边界
+
+当前知识文件有两处明确冲突，不能因为检索成功就把模型回答当作接口规则：
+
+- `预约规则.md` 写“待审核、已通过的预约，本人可以取消”，而 `cancel_reservation()` 只允许状态 0。需按确认后的业务政策同步文档或实现。
+- `设备使用.md` 写“约了设备，时段内实验室也占用”，而当前创建逻辑分别检查设备预约和整间实验室预约的冲突。
+
+Markdown 开放时间也是静态资料，不会同步读取管理员维护的实验室表。审核、取消及过期扫描目前没有统一的原子状态转换保护；自动过期不等于审核时已增加过期判断。
+
+### 16.7 验收与后续智能体步骤
+
+- 验证登录用户可以请求、未登录请求被拒绝，菜单角色展示与接口规则符合预期。
+- 首次检索后检查持久化目录；用安全、预约、开放时间和无关问题检查检索文本、筛选分数及最终回答。
+- 修改原文后确认理解“不会自动同步”的现状，再验证未来实现的重建或 upsert 方案。
+- 验证前端失败提示、发送状态和重复点击；检查空集合、无匹配结果、模型接口失败等路径。
+- 用学习数据库验证空预约表、全部未过期、结束时刻到达、已通过预约以及服务关闭；已通过状态不应被本扫描修改。
+
+2026-10-23 本次更新核对了当前源码与历史修补，并检查文档结构、链接及代码快照一致性。此前对话中已进行过扫描生命周期和 AI 路由的临时隔离测试；模拟模型返回通过不代表真实 BGE 推理、大模型服务、MySQL 并发或浏览器端到端验收通过。这些临时检查没有形成仓库测试套件。
+
+后续智能体可先增加只读的实时资源查询工具，再接入预约操作；继续复用身份依赖和现有预约服务的权限、事务及状态规则，并补上操作确认、错误反馈和结果追踪。详细教学及当前代码快照见学习笔记第 20、21 节。
