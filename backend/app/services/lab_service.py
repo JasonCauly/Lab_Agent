@@ -10,7 +10,6 @@ from app.schemas.lab import (
 )
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-
 from app.utils.password import hash_password, verify_password
 
 

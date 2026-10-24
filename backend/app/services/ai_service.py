@@ -1,15 +1,71 @@
+import json
 from openai import OpenAI
+from sqlalchemy.orm import Session
 from app.common.exceptions import BusinessException
 from app.config import settings
 from app.schemas.ai import ChatMessage, ChatRequest
-from app.services import kb_service
+from app.services import equipment_service, kb_service, lab_service
+from data.tools.ai_config import SYSTEM_PROMPT, TOOLS
 
-SYSTEM_PROMPT = """你是智能实验室预约系统的助手，回答要简洁。
-如果下面提供了实验室资料，请依据资料回答，不要编造资料里没有的时间、规则、设备。
-你目前查不到真实的实验室空闲、设备库存、预约记录。
-如果用户问现在/哪些实验室能约、某台设备此刻有没有空，请说明去「实验室列表」查看。
-除了实验室相关的问题之外，不要回复无关的问题。
-"""
+
+def run_tool(db: Session, name: str, arguments: str) -> str:
+    try:
+        args = json.loads(arguments or "{}")
+    except json.JSONDecodeError:
+        return json.dumps({"error": "参数不是合法的json"}, ensure_ascii=False)
+
+    if not isinstance(args, dict):
+        return json.dumps({"error": "参数必须是JSON对象"}, ensure_ascii=False)
+
+    try:
+        if name == "list_open_labs":
+            keywords = (args.get("keywords") or "").strip() or None
+            page = lab_service.get_lab_page_list(
+                db, page=1, page_size=10, keywords=keywords, status=1
+            )
+            rows = [
+                {
+                    "id": item.id,
+                    "name": item.name,
+                    "location": item.location,
+                    "capacity": item.capacity,
+                    "open_time": item.open_time,
+                    "close_time": item.close_time,
+                }
+                for item in page.list
+            ]
+            return json.dumps({"total": page.total, "labs": rows}, ensure_ascii=False)
+
+        if name == "list_lab_equipments":
+            lab_id = args.get("lab_id")
+            if not lab_id:
+                return json.dumps(
+                    {"error": "参数缺少实验室的 lab_id"}, ensure_ascii=False
+                )
+            keywords = (args.get("keywords") or "").strip() or None
+            page = equipment_service.get_equipment_page_list(
+                db, page=1, page_size=10, keywords=keywords, lab_id=int(lab_id)
+            )
+            rows = [
+                {
+                    "id": item.id,
+                    "lab_id": item.lab_id,
+                    "lab_name": item.lab_name,
+                    "name": item.name,
+                    "spec": item.spec,
+                    "quantity": item.quantity,
+                    "status": item.status,
+                }
+                for item in page.list
+            ]
+            return json.dumps(
+                {"total": page.total, "equipments": rows}, ensure_ascii=False
+            )
+
+        return json.dumps({"error": f"未找到对应的tool: {name}"}, ensure_ascii=False)
+
+    except Exception as exc:
+        return json.dumps({"error": str(exc)}, ensure_ascii=False)
 
 
 def get_client() -> OpenAI:
@@ -19,7 +75,7 @@ def get_client() -> OpenAI:
     return OpenAI(api_key=settings.LLM_API_KEY, base_url=settings.LLM_BASE_URL)
 
 
-def chat(data: ChatRequest):
+def chat(db: Session, data: ChatRequest):
     """大模型对话"""
     if not data.messages:
         raise BusinessException(message="对话内容为空")
@@ -41,19 +97,46 @@ def chat(data: ChatRequest):
         system_prompt += "\n\n以下是检索到的实验室的资料: \n" + knowledge
 
     client = get_client()
+    messages = [{"role": "system", "content": system_prompt}, *history]
 
     try:
-        res = client.chat.completions.create(
-            model=settings.LLM_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                *history,
-            ],
-        )
-        content = res.choices[0].message.content
-        if not content:
-            raise BusinessException(message="大模型没有返回内容")
-        return content
+        for _ in range(3):
+            res = client.chat.completions.create(
+                model=settings.LLM_MODEL,
+                messages=messages,
+                tools=TOOLS,
+                tool_choice="auto",
+            )
+            msg = res.choices[0].message
+            tool_calls = msg.tool_calls or []
+            if not tool_calls:  # 若没有tool调用, 则直接返回大模型的输出结果内容
+                content = msg.content
+                if not content or not content.strip():
+                    raise BusinessException(message="大模型没有返回内容")
+                return content
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": msg.content or "",
+                    "tool_calls": [
+                        {
+                            "id": call.id,
+                            "type": "function",
+                            "function": {
+                                "name": call.function.name,
+                                "arguments": call.function.arguments,
+                            },
+                        }
+                        for call in tool_calls
+                    ],
+                }
+            )
+            for call in tool_calls:
+                result = run_tool(db, call.function.name, call.function.arguments)
+                messages.append(
+                    {"role": "tool", "content": result, "tool_call_id": call.id}
+                )
 
-    except Exception:
-        raise BusinessException(message="大模型调用失败, 请稍后重试")
+        raise BusinessException(message="工具调用次数已达上限，请缩小查询范围后重试")
+    except Exception as exc:
+        raise BusinessException(message="大模型调用失败, 请稍后重试") from exc

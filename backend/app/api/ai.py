@@ -16,5 +16,5 @@ def chat(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    content = ai_service.chat(data=data)
+    content = ai_service.chat(db=db, data=data)
     return Response.success(data=ChatMessage(role="assistant", content=content))
