@@ -8,9 +8,9 @@
 >
 > **版本与验证**：基础章节含 learning-demo 教学整合示例，后续章节含原项目的阶段快照。不要混合不同日期的完整文件。“已实现”“已讲解”“历史检查通过”“待验收”分别记录；历史测试数量不能当作本次重新运行的结果。
 
-当前项目已包括用户与资源管理、学生浏览、预约主要流程与自动过期，以及框架 Agent 的五个工具。聊天现使用 POST SSE，逐步显示状态、工具过程和正文；自定义方案与框架 JSON 方案继续保留用于对照。强制确认、幂等、流式会话清理与工具并发、时段空闲查询及真实环境完整验收仍需完善。
+项目现已基本结题：用户与资源管理、学生浏览、预约主要流程与自动过期、框架 Agent 五个工具和 SSE 对话已形成项目主线；首页进一步整合欢迎信息、功能介绍和按角色区分的快捷入口。首页教程见[第 7.14 节起](#home-overview)，结题展示顺序见[第 18.17 节](#project-closeout)。两个首页统计值尚未接入数据，强制确认、幂等、流式会话与工具并发等保留为后续完善项；基本结题不代表这些事项已全部验收。自定义方案与框架 JSON 方案继续保留用于对照。
 
-本笔记不保存数据库密码、JWT 密钥或真实 token。示例占位值需替换为学习环境配置。早期 docs 与原后端/前端回归文件未恢复，旧结果见[历史验证记录](#historical-regression)；当前已有 frontend/tests/ai.test.js，7 项 SSE 解析测试的本次结果见[流式验收](#sse-validation)，不要与旧测试数量合并。
+本笔记不保存数据库密码、JWT 密钥或真实 token。示例占位值需替换为学习环境配置。早期 docs 与原后端/前端回归文件未恢复，旧结果见[历史验证记录](#historical-regression)；此前 7 项 SSE 解析测试记录见[流式验收](#sse-validation)。本次首页收尾时 frontend/tests/ai.test.js 已不在工作区，保留历史结果与快照，不计作本次重跑；本次前端构建结果见第 7.22 节。
 
 ## 目录
 
@@ -59,6 +59,7 @@
 | 用户名唯一索引与旧库升级                            | [配置与数据库](#username-migration)、[并发注册](#username-uniqueness)              |
 | main.py、lifespan 与后台任务关闭                    | [身份认证与应用入口](#app-lifespan)                                                |
 | request.js、Login.vue 与路由实例                    | [前端登录与导航](#17-login-navigation)                                             |
+| Home.vue、useUser、角色快捷入口与结题展示 | [当前首页](#home-overview)、[结题说明](#project-closeout) |
 | 用户和资源的关联删除                                | [用户删除](#user-deletion)、[实验室与设备删除](#resource-deletion)                 |
 | reservation_service.py 的创建与事务                 | [预约提交与并发](#reservation-concurrency)                                         |
 | reservation_service.py 的查询、取消、审核与过期扫描 | [预约完整流程](#18-reservation-workflow)、[过期扫描代码](#reservation-expiry-code) |
@@ -108,7 +109,7 @@ sequenceDiagram
     V->>V: 跳转首页
 ```
 
-再进入首页时：
+基础学习副本再次进入首页时，会执行下面的查询链。当前原项目首页读取共享的 userInfo，不主动发送此查询；两者对照见第 7.10、7.14～7.23 节。
 
 ```text
 Home.vue
@@ -2696,6 +2697,8 @@ async function login() {
 
 ### 7.10 首页
 
+本节保留基础学习副本中“挂载后重新请求用户资料”的示例。原项目现在的首页是功能展示与导航入口，使用共享用户状态，完整讲解和当前快照见[第 7.14 节起](#home-overview)。
+
 `frontend/src/views/Home.vue`：
 
 ```vue
@@ -3210,6 +3213,269 @@ const login = async () => {
   text-align: center;
 }
 </style>
+```
+
+</details>
+
+<a id="home-overview"></a>
+
+### 7.14 当前首页：从欢迎语到项目功能入口（2026-10-26）
+
+Home.vue 原先只显示一行欢迎语，当前把用户身份、系统能力与常用操作整合到 /manager/home。它复用既有页面与登录状态，没有新增首页后端接口，也没有把各业务页面的查询和提交逻辑搬进首页。
+
+| 区域 | 内容 | 数据或行为来源 |
+| --- | --- | --- |
+| 欢迎卡片 | 昵称、身份、“打开AI助手”按钮 | useUser 的 userInfo；点击后 router.push |
+| 数字展示 | 开放的实验室、与我相关的预约 | 两个 ref(0)，目前是占位值 |
+| 系统功能目录 | 业务预约、知识库问答、智能 Agent | 本地 features 数组，循环渲染介绍卡片 |
+| 功能快捷入口 | 学生 3 项、管理员分支 4 项 | computed 根据角色生成 shortcuts，router-link 导航 |
+
+相关文件按职责串起来：Home.vue 负责首页展示；utils/user.js 提供共享状态；utils/auth.js 读写登录缓存；router/index.js 定义目标页面；Layout.vue 提供页头、侧栏与承载首页的 router-view。预约与 Agent 的详细实现继续在第 12～15 章学习。
+
+### 7.15 欢迎信息：共享 ref、模板解包与昵称兜底
+
+首页通过 `const { userInfo } = useUser()` 取得模块级共享 ref。登录时 saveLoginData 同时保存本地缓存并赋值 userInfo.value；个人资料保存后 updateUser 更新同一引用，因此首页和布局可以使用同一份用户信息。
+
+脚本读取 `userInfo.value.role`；模板中的顶层 ref 会自动解包，因此写 `userInfo.role`。这不是两份用户数据，也不需要在每个页面复制一份登录结果。[Vue 响应式基础](https://cn.vuejs.org/guide/essentials/reactivity-fundamentals.html)
+
+`userInfo?.name || '同学'` 在姓名为空或用户对象不存在时显示默认称呼。身份文案采用 `role === 'student' ? '学生' : '管理员'`，只做学生与其他值的二选一；它并没有单独验证 admin。
+
+注意默认称呼只保护了该表达式：身份文案和 shortcuts 仍直接读取 role。当缓存缺失而 token 仍存在时，userInfo 可能为 null，当前代码没有完整空值保护。首页也没有 onMounted 获取资料；刷新只会重新读取本地缓存，不代表后端重新确认了身份。
+
+### 7.16 卡片与功能目录：先组织内容，再循环展示
+
+features 是包含 title、desc 的普通数组，因为当前三个介绍项是固定文案，不需要随接口返回而改变。模板用 v-for 统一生成卡片，避免重复写三份布局；卡片没有绑定点击事件，真正的导航在按钮和快捷入口中。
+
+| 写法 | 在本页中的作用 |
+| --- | --- |
+| el-card 的 shadow="never" | 卡片不显示阴影，用区域与间距划分内容 |
+| el-row 的 :gutter="16" | 设置栅格列之间的间距 |
+| el-col 的 :span="8" | 在 24 列栅格中占 8 列，三个功能介绍各占三分之一 |
+| min-height: 40px | 给介绍文案留出基本高度，不保证所有内容永远等高 |
+| template #header | 给快捷入口卡片提供标题插槽 |
+| flex-wrap: wrap | 快捷链接在宽度不足时可以换行 |
+
+span 和 gutter 使用冒号传入数字。当前未配置 xs/sm/md 等断点，欢迎区和统计区也未设置换行规则，因此不能把桌面三列展示写成已经完成手机端适配。[Element Plus 布局说明](https://element-plus.org/zh-CN/component/layout.html)
+
+两处循环目前使用 index 作为 key，适合本页简单的展示结构；若后续有动态排序、输入框或卡片内部状态，可以改用稳定的功能 ID 或路径作为标识。
+
+三个介绍项概括业务预约、知识检索与 Agent 能力。其中“确认表单提交”是页面原文，当前 Agent 实际通过对话提示确认后调用预约工具，并没有新增可交互确认表单或服务端强制确认节点。讲解和答辩时应与第 15 章的实际流程保持一致。
+
+### 7.17 computed：让快捷入口随用户角色变化
+
+shortcuts 根据共享的 userInfo.value.role 派生列表。computed 会追踪读取的响应式依赖，在角色变化后更新结果；无需再用 watch 把另一个数组同步一遍。[Vue 计算属性](https://cn.vuejs.org/guide/essentials/computed.html)
+
+| 分支 | 链接文案 | 目标路径 |
+| --- | --- | --- |
+| student | AI 智能助手 | /manager/aichat |
+| student | 实验室列表 | /manager/lablist |
+| student | 我的预约 | /manager/myreservation |
+| 其他角色值 | 预约审核管理 | /manager/auditreservation |
+| 其他角色值 | 实验室管理 | /manager/lab |
+| 其他角色值 | 设备管理 | /manager/equipment |
+| 其他角色值 | 用户管理 | /manager/user |
+
+在正常 student/admin 两种角色下，结果分别为 3 项和 4 项。源码是 `if student ... return ...`，其余情况直接返回管理链接；不能把它描述成显式校验 admin。这个差异也说明 computed 负责展示选择，权限仍需在请求层验证。
+
+### 7.18 router.push、router-link 与侧栏的配合
+
+顶部按钮在点击回调里调用 router.push('/manager/aichat')，属于程序式导航；快捷入口使用 router-link 的 :to 绑定 item.path，属于声明式导航。两者均进入现有 Vue Router 路由，目标组件在 Layout 的 router-view 中显示，不会在点击链接时直接创建预约。
+
+首页导入的是 `@/router` 导出的实例。这里没有在 setup 外部调用 useRouter，与第 7.12 节的登录导航问题要区分。
+
+Layout 当前使用 `:default-active="route.path"` 对应侧栏选中项，并统一了“设备管理”“AI 智能助手”的显示文案。路由路径没有随文案一起修改。
+
+侧栏的 AI 菜单只向 student 展示，而首页顶部 AI 按钮没有角色条件，管理员也会看到。/manager/aichat 路由没有角色守卫；后端流接口依赖 get_current_user，没有额外限定 student。因此首页按钮与侧栏的展示范围并不相同，应按实际入口说明。
+
+同理，隐藏管理链接不等于禁止直接输入管理页面地址。当前全局守卫只检查 token 是否存在，管理接口的授权仍由各接口依赖决定，具体边界见对应业务章节。
+
+### 7.19 两个统计数字：ref(0) 与真实查询的区别
+
+当前声明如下，文件内没有后续赋值或 API 调用：
+
+```js
+const openLabCount = ref(0)
+const reservationCount = ref(0)
+```
+
+因此页面显示 0 只代表初始占位值，不能据此判断数据库没有开放实验室或没有预约。ref 使值具有响应能力，但不会自动查询数据库，也不会自动与别的页面列表同步。
+
+如果以后继续扩展，应先定义统计口径：开放实验室是否只按 status 筛选；学生预约是否包括已取消、已拒绝；管理员看到的是个人预约还是待审核总数。确认后再选择复用现有列表 total 或新增统计接口，并加入加载、失败与空数据状态。这些是后续设计方向，本次首页没有实现。
+
+尤其不要把分页 records.length 当总数量，也不要把管理员全量预约 total 标成“与我相关”。首页收尾展示时可直接说明两个数字区域已预留，真实统计尚待接入。
+
+### 7.20 从登录到首页，再进入业务的完整路线
+
+```mermaid
+flowchart TD
+    L["登录成功：saveLoginData"] --> U["共享 userInfo 与 localStorage"]
+    R["/ → /manager/home"] --> G["路由守卫检查 token 是否存在"]
+    L --> G
+    G --> V["Layout 的 router-view 挂载 Home.vue"]
+    U --> V
+    V --> W["昵称与角色欢迎信息"]
+    V --> F["features → 三张功能介绍卡片"]
+    V --> C["computed → 角色快捷入口"]
+    V --> N["ref(0) → 两个占位数字"]
+    C --> P["router-link 导航"]
+    V --> A["打开AI助手 → router.push"]
+    P --> T["目标业务页面"]
+    A --> T
+    T --> B["由目标页面按自己的逻辑请求接口"]
+```
+
+本链路中，首页本身没有用户信息或统计查询。进入实验室列表后由列表页查询资源；进入 AI 页后，用户发送消息才会发起 SSE 请求。应区分“页面路由跳转”和“HTTP 接口调用”。
+
+### 7.21 从基础首页复现当前页面的顺序
+
+1. 保留登录、共享 userInfo、Layout 与 /manager/home 路由，先确认欢迎昵称能读取。
+2. 用卡片组织欢迎区、数字展示、功能目录和快捷入口四个区域。
+3. 添加 features 数组，通过 v-for 生成三张介绍卡片。
+4. 使用 computed 派生角色快捷入口，并逐项核对已有路由路径。
+5. 将 router-link 与顶部 AI 按钮接到既有页面，保持导航和业务提交分开。
+6. 对照两个角色检查菜单、按钮与页面文案，说明当前数字占位及空缓存边界。
+7. 构建前端，再在实际浏览器中检查导航与布局；新增统计查询应作为独立后续功能验收。
+
+### 7.22 首页核对记录与复习练习
+
+2026-10-26 首页收尾时，已读取 Home.vue、共享用户状态、登录缓存、路由与 Layout，并在 frontend 执行 `npm.cmd run build`，构建通过。构建仍提示部分包超过 500 kB；本次未调整打包配置。构建通过说明当前组件能参与生产打包，不代表真实登录、浏览器样式或数据库流程已经验收。
+
+| 手工检查 | 应核对的现象 |
+| --- | --- |
+| 学生登录后进入首页 | 昵称、学生身份、三张介绍卡和 3 个快捷链接 |
+| 管理员登录后进入首页 | 管理员身份、4 个管理链接，同时仍有顶部 AI 按钮 |
+| 点击各入口 | 路径匹配现有页面，首页没有直接发送业务写入请求 |
+| 修改个人资料后返回 | 欢迎昵称使用更新后的共享 userInfo |
+| 刷新或缓存缺失 | 区分本地缓存恢复与后端查询，记录 role 直接访问的空值问题 |
+| 观察两个数字 | 当前固定初始值 0，不当作真实统计 |
+| 缩窄浏览器窗口 | 检查三列、欢迎区和统计区是否拥挤或溢出 |
+
+复习时尝试回答：为什么 features 使用普通数组而 shortcuts 使用 computed？为什么脚本需要 .value 而模板通常不用？为什么 ref(0) 不会自动获得数据库数量？顶部 AI 按钮与侧栏的角色条件有何不同？首页出现管理员链接能否证明用户有后端管理员权限？
+
+本次未新增首页测试文件，也未重跑历史 SSE 用例；当前工作区已无 frontend/tests/ai.test.js，第 15.61 节的结果和快照作为此前记录保留。
+
+### 7.23 当前 Home.vue 完整代码快照（2026-10-26）
+
+以下对应本次读取的首页源码，规范化行尾空白。第 7.10 节仍保留学习副本示例，两者用于比较不同阶段，不应拼接成同一个文件。
+
+<details>
+<summary><code>frontend/src/views/Home.vue</code>（2026-10-26，首页收尾版）</summary>
+
+```vue
+<template>
+  <div>
+    <el-card shadow="never" style="margin-bottom: 16px">
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 16px">
+        <div>
+          <div style="font-size: 18px; color: #333">欢迎您：{{ userInfo?.name || '同学' }}</div>
+          <div style="font-size: 14px; color: #999; margin-top: 8px">
+            欢迎使用实验室预约系统，当前身份：{{ userInfo.role === 'student' ? '学生' : '管理员' }}
+          </div>
+        </div>
+
+        <el-button type="primary" @click="router.push('/manager/aichat')">打开AI助手</el-button>
+      </div>
+    </el-card>
+
+    <el-card shadow="never" style="margin-bottom: 16px">
+      <div style="display: flex; align-items: center; gap: 50px">
+        <div>
+          开放的实验室 <b style="margin-left: 5px; font-size: 18px">{{ openLabCount }}</b>
+        </div>
+        <div>
+          与我相关的预约 <b style="margin-left: 5px; font-size: 18px">{{ reservationCount }}</b>
+        </div>
+      </div>
+    </el-card>
+
+    <div style="margin-bottom: 16px">
+      <div style="font-size: 20px; font-weight: bold; margin-bottom: 10px">系统功能目录</div>
+      <el-row :gutter="16">
+        <el-col :span="8" v-for="(item, index) in features" :key="index">
+          <el-card shadow="never">
+            <div style="padding: 10px">
+              <div style="font-size: 16px; font-weight: 600; color: #333">
+                {{ item.title }}
+              </div>
+              <div
+                style="
+                  margin-top: 8px;
+                  color: #666;
+                  font-size: 13px;
+                  line-height: 1.6;
+                  min-height: 40px;
+                "
+              >
+                {{ item.desc }}
+              </div>
+            </div>
+          </el-card>
+        </el-col>
+      </el-row>
+    </div>
+
+    <el-card shadow="never" style="margin-bottom: 16px">
+      <template #header>
+        <div style="font-size: 16px">
+          <span>功能快捷入口</span>
+        </div>
+      </template>
+
+      <div style="display: flex; flex-wrap: wrap; gap: 32px">
+        <router-link
+          v-for="(item, index) in shortcuts"
+          :key="index"
+          style="color: #409eff"
+          :to="item.path"
+        >
+          {{ item.label }}
+        </router-link>
+      </div>
+    </el-card>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed } from 'vue'
+import router from '@/router'
+import { useUser } from '@/utils/user'
+
+const { userInfo } = useUser()
+const openLabCount = ref(0)
+const reservationCount = ref(0)
+
+const features = [
+  {
+    title: '业务预约',
+    desc: '实验室 / 设备浏览、提交预约、我的预约和管理员审核'
+  },
+  {
+    title: '知识库问答',
+    desc: 'RAG 检索规则和开放时间等文档，回答有依据'
+  },
+  {
+    title: '智能 Agent',
+    desc: '根据用户输入的自然语言主动进行 Tool Call 和节点编排循环调用，可以查库、流式对话、确认表单提交'
+  }
+]
+
+const shortcuts = computed(() => {
+  if (userInfo.value.role === 'student') {
+    return [
+      { label: 'AI 智能助手', path: '/manager/aichat' },
+      { label: '实验室列表', path: '/manager/lablist' },
+      { label: '我的预约', path: '/manager/myreservation' }
+    ]
+  }
+
+  return [
+    { label: '预约审核管理', path: '/manager/auditreservation' },
+    { label: '实验室管理', path: '/manager/lab' },
+    { label: '设备管理', path: '/manager/equipment' },
+    { label: '用户管理', path: '/manager/user' }
+  ]
+})
+</script>
 ```
 
 </details>
@@ -19225,7 +19491,7 @@ SSE 主要改变结果传递和界面反馈，五个工具仍调用原业务服�
 
 ### 15.61 本次检查记录与真实 SSE 验收
 
-2026-10-26 在 frontend 目录实际执行现有测试：
+此前 2026-10-26 的 SSE 文档更新中，在 frontend 目录实际执行了以下测试。本次首页收尾时该测试文件已不在工作区，命令与结果作为历史记录保留，需恢复文件后才能重跑：
 
 ```powershell
 node --test tests/ai.test.js
@@ -19241,7 +19507,7 @@ node --test tests/ai.test.js
 6. 非法 JSON 报错且释放 reader 锁。
 7. onEvent 回调异常原样传播。
 
-这些用例不挂载 AIChat.vue，不连接真实后端、模型、MySQL 或代理；不能据此认定 Vue 打字机效果、工具并发、会话清理与真实预约流程已验收。frontend/tests 现在存在 ai.test.js，但它不是恢复了早期 6 项登录测试；旧自定义方案的 30 个断言也不是本次流式测试数量。
+这些用例不挂载 AIChat.vue，不连接真实后端、模型、MySQL 或代理；不能据此认定 Vue 打字机效果、工具并发、会话清理与真实预约流程已验收。当时 frontend/tests 存在 ai.test.js，本次首页收尾时已缺失；它也不是早期 6 项登录测试的恢复版；旧自定义方案的 30 个断言也不是本次流式测试数量。
 
 | 真实验收场景 | 要观察的结果 |
 | --- | --- |
@@ -19269,7 +19535,7 @@ node --test tests/ai.test.js
 
 ### 15.63 当前 SSE 代码快照（2026-10-26）
 
-以下保存当前 API、Agent、工具标签、前端解析、页面和已有测试，规范化行尾空白。保留源码中的旧代码注释，便于比较迁移过程；第 15.19 与 15.41 节的历史快照继续保留。预约扫描的当前片段在第 13.29 节。
+以下保存此前 SSE 更新时的 API、Agent、工具标签、前端解析、页面和测试，规范化行尾空白。本次首页收尾时测试文件已不在工作区，仍保留其快照供恢复与比较。保留源码中的旧代码注释，便于比较迁移过程；第 15.19 与 15.41 节的历史快照继续保留。预约扫描的当前片段在第 13.29 节。
 
 <details>
 <summary><code>backend/app/api/ai.py</code>（2026-10-26）</summary>
@@ -20218,7 +20484,7 @@ index.html 的 `<div id="app"></div>` 是 Vue 挂载界面的位置。main.js �
 
 router/index.js 的 beforeEach 先用 utils/auth.js.getToken() 读取本地 token。登录页和注册页直接放行，其他页面没有 token 就转到 /login。这里仅判断本地是否存在 token；token 是否真实有效，还需要后端接口验证。
 
-用户进入 /manager/home 后，Home.vue 从 useUser() 读取 userInfo 显示欢迎语。当前 Home.vue 没有在加载时重新请求个人信息，不要为它画出不存在的首页查询接口。
+用户进入 /manager/home 后，Home.vue 从 useUser() 读取 userInfo 显示昵称与身份，features 生成三张功能介绍卡，computed 生成角色快捷入口；顶部按钮进入 AI 页面。两个数字仍是 ref(0) 占位。当前 Home.vue 没有在加载时重新请求个人信息或统计数据，完整首页路线见[第 7.14～7.23 节](#home-overview)。
 
 **后端启动路线。**
 
@@ -21025,7 +21291,7 @@ stream_agent 构造消息与图，astream_events 观察模型和工具执行。a
 6. 接入本人查询/取消和管理员审核；实现独立 Session 的过期扫描，在 main.py 中安排启动与退出清理。
 7. 整合 JWT UTC、前端会话版本、useRouter 导航与 useRoute 菜单状态，分别核对浏览器操作。
 8. 配置 AI 页面、LLM 与 BGE 本地缓存/预热；保留旧自定义循环，接入 LangChain 工具、LangGraph 消息图与预约写入，核对索引同步和确认边界。
-9. 运行现有 SSE 测试并维护对应回归；原后端与登录测试文件仍需恢复，不能把当前 7 项或发现 0 项当成历史 19/6 项重新通过。
+9. 恢复缺失的 SSE、后端与登录测试文件后运行对应回归；不能把此前 7 项或本次发现 0 项当成历史 19/6 项重新通过。
 10. 在学习 MySQL、真实模型服务和浏览器分别验收正常与错误路径，包括并发、状态竞争、上传、检索及工具调用。
 11. 用新的空目录和空学习库再走一遍，记录遗漏依赖、配置、数据初始化与迁移差异。
 
@@ -21085,7 +21351,7 @@ VITE_API_BASE_URL=http://127.0.0.1:8001
 
 ### 17.5 前端检查清单
 
-以下方框用于记录你自己的实际运行结果，本笔记不会预先勾选：
+以下方框针对基础学习副本，记录你自己的实际运行结果，本笔记不会预先勾选。当前原项目首页使用本地共享状态，不执行下面的首页 GET 查询；其导航与展示验收改看第 7.22 节。
 
 - [ ] 未登录访问 /manager/home，会跳转 /login。
 - [ ] 两次密码不一致时，注册页不给后端提交请求。
@@ -21121,6 +21387,8 @@ location.reload();
 ```
 
 实验只修改自己的学习环境。它说明 token 的存在与有效性需要分别检查。
+
+上面的自动跳转链依赖第 7.10 节的学习副本主动查询用户信息。当前原项目首页不会发出该查询，单独刷新首页不能验证失效 token；应进入会调用受保护接口的业务页面观察实际响应。SSE fetch 的 401 提示与 Axios 的清理行为也不同，见第 15.50 节。
 
 可选的过期实验：在学习副本后端配置中临时设置 `JWT_EXPIRE_HOURS=0`，重启后端并重新登录，首页应发现 token 已过期。完成后恢复 24，重启并重新登录以获得新的有效 token。
 
@@ -21194,7 +21462,7 @@ location.reload();
 
 ### 17.11 历史回归测试证明了什么（2026-10-20）
 
-2026-10-26：frontend/tests 现已有 SSE 的 ai.test.js；下面提到缺失的原测试文件和历史 19/6 项仍未恢复。当前 7 项流解析测试独立记录在第 15.61 节。
+此前 2026-10-26 SSE 更新时曾有 frontend/tests/ai.test.js；本次首页收尾时它与原测试文件均不在工作区。此前 7 项流解析测试独立记录在第 15.61 节，不与下面的历史 19/6 项合并。
 
 2026-10-20 当时重新执行了仓库中的测试；当前缺少对应测试目录，下面命令保留为历史记录：
 
@@ -21235,7 +21503,7 @@ ThreadPoolExecutor 模拟多个执行线程，Barrier 让它们在某一步会�
 
 ## 18. 功能待办、遗留问题与最终验收
 
-勾选“已讲解”或记录历史检查，不表示当前学习副本已验收。先按功能查待办，再看遗留问题总表，最后对照完整复现与结束条件。
+项目已基本结题，本章保留后续完善与复习验收事项，结题范围和演示顺序见第 18.17 节。勾选“已讲解”或记录历史检查，不表示当前学习副本已验收；未勾选项也不表示项目尚未进入收尾阶段。
 
 ### 18.1 已经讲解的内容
 
@@ -21256,7 +21524,7 @@ ThreadPoolExecutor 模拟多个执行线程，Barrier 让它们在某一步会�
 - [x] Axios 实例、默认导出、请求与响应拦截器。
 - [x] Promise、await 与 loginApi 返回值。
 - [x] get_current_user、Depends、用户信息接口。
-- [x] 首页重新获取用户信息、登录失效和退出登录。
+- [x] 学习副本首页重新获取用户信息、登录失效和退出登录；当前首页改用共享状态，另有功能目录和角色快捷入口教程。
 - [x] cls、默认导入改名和 model_dump 等语法问答。
 - [x] 个人资料查询与修改：Object.assign、请求字段范围、setattr 与数据库提交。
 - [x] 头像上传、FormData、文件响应、静态文件访问与开发代理。
@@ -21275,10 +21543,10 @@ ThreadPoolExecutor 模拟多个执行线程，Barrier 让它们在某一步会�
 
 - [x] 按原项目 Layout.vue 讲解页头、侧栏和内容区域。
 - [x] 讲清父路由、children 与两层 router-view 的显示关系。
-- [x] 说明菜单点击导航及当前 default-active 固定值的行为。
+- [x] 说明早期 default-active 固定值与当前 route.path 绑定的区别。
 - [x] 区分页面名称、菜单文案、路由路径与后端权限。
 - [x] 说明首页、实验室、设备、用户和 Profile 的现有路由。
-- [x] 说明哪些页面有真实功能，哪些只是占位内容。
+- [x] 讲解首页欢迎区、功能卡片、角色快捷入口，以及两个数字仍为占位值的边界。
 - [ ] 检查或调整当前路径与菜单高亮的对应关系。
 - [ ] 完成一次导航、刷新、退出登录的检查。
 
@@ -21380,7 +21648,7 @@ AI/RAG、本地缓存/预热和 SSE 发送已讲解；真实模型、集合兼�
 
 - [x] 保留自定义循环与框架 JSON 的完整教程和阶段快照，增加 SSE 前后端完整调用链。
 - [x] 讲解六种事件、异步生成器、分块解码、响应式助手、历史过滤、DeepSeek 分支与线程化扫描。
-- [x] 2026-10-26 实际运行现有 frontend/tests/ai.test.js，7 项通过；不等于旧 30 个模拟断言或历史登录 6 项重新通过。
+- [x] 保留 2026-10-26 此前 SSE 更新中 7 项测试通过的记录；本次首页收尾时文件已缺失，未重跑，也不等于旧 30 个模拟断言或历史登录 6 项重新通过。
 - [ ] 在真实浏览器、模型与代理下核对首片延迟、逐段正文、工具过程和错误反馈。
 - [ ] 核对 FastAPI 0.115.13 的流式依赖清理与异步 ToolNode 共用 Session 的并发问题。
 - [ ] 补齐流式最终输出校验、无 done 的异常截断识别、取消/超时/心跳策略与稳定调用 ID。
@@ -21465,7 +21733,34 @@ AI/RAG、本地缓存/预热和 SSE 发送已讲解；真实模型、集合兼�
 5. 正常流程和重要失败场景完成实际检查。
 6. 尚未实现的占位页面与已实现功能的边界已经明确。
 
-目前尚未达到全部条件，因此整个教程仍在进行中。
+这些条件用于检查个人复现与完整验收程度。本项目已基本结题，现有主线教程完成了从基础搭建到预约、Agent、SSE 与首页展示的串联；后续完善项和真实环境验收继续单独保留，不能仅根据项目收尾就全部勾选。
+
+<a id="project-closeout"></a>
+
+### 18.17 项目基本结题：范围、演示顺序与后续完善（2026-10-26）
+
+本轮以首页展示和功能导航收尾。项目可以按“用户进入系统 → 浏览资源 → 完成预约 → 管理员审核 → AI 辅助查询与预约”的主线讲解；首页负责介绍能力和提供入口，详细业务仍由原来的页面与服务承担。
+
+| 结题讲解主题 | 主要位置 | 能说明的设计 |
+| --- | --- | --- |
+| 进入系统与首页 | 第 5～7 章 | JWT 登录、共享状态、角色导航与页面组合 |
+| 账号、资料与资源 | 第 8～11 章 | CRUD、上传、分页与学生浏览 |
+| 预约主要流程 | 第 12～13 章 | 校验、事务、本人查询/取消、审核与自动过期 |
+| 知识问答与 Agent | 第 14～15 章 | 本地检索、五个工具、图编排与 SSE 展示 |
+| 整体调用与验收 | 第 16～18 章 | 页面到数据库的链路、历史验证和当前边界 |
+
+演示时可按以下顺序准备，不把清单当作本次已执行的端到端测试：
+
+1. 以学生身份登录，展示首页身份、三个功能介绍与快捷入口，说明两个统计值尚未接入。
+2. 从实验室列表查看资源，选择合法时段提交预约，再到“我的预约”查看状态；如需展示取消，用另一条待审核申请。
+3. 切换管理员，展示首页管理入口、资源管理与预约审核，审核后回到学生页面查看结果。
+4. 打开 AI 助手，先演示知识或资源查询，再展示自然语言确认后的预约工具与 SSE 状态、过程和正文；以真实记录核对写入结果。
+5. 用第 15 章比较保留的自定义循环、框架 JSON 与当前框架 SSE 三个阶段，说明协议处理、图编排和输出方式分别改变了什么。
+6. 展示源码目录、依赖和启动方式，最后说明本次构建结果及未覆盖的真实环境验收。
+
+收尾时保留的后续事项主要是：首页真实统计、空用户状态和窄屏布局；Agent 强制确认、幂等、流式会话及工具并发；真实模型、数据库与浏览器的完整流程验证。各项的具体原因仍放在对应功能章节，不把已列出的待办改写成已修复。
+
+本次实际完成的是首页源码核对、教程补充和前端生产构建，未改业务代码，未连接真实数据库或调用模型。历史 19/6 项回归、此前 7 项 SSE 解析测试与本次构建是不同验证记录；当前缺失的测试文件需恢复后才能重跑。
 
 <a id="08-questions"></a>
 
