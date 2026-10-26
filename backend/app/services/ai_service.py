@@ -5,7 +5,7 @@ from app.common.exceptions import BusinessException
 from app.config import settings
 from app.schemas.ai import ChatMessage, ChatRequest
 from app.services import equipment_service, kb_service, lab_service
-from data.tools.ai_config import SYSTEM_PROMPT, TOOLS
+from data.config_global.ai_config import SYSTEM_PROMPT, TOOLS
 
 
 def run_tool(db: Session, name: str, arguments: str) -> str:

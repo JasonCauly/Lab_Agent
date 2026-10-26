@@ -51,7 +51,7 @@
 
             <el-menu-item index="/manager/equipment" v-if="userInfo?.role === 'admin'">
               <el-icon><Setting /></el-icon>
-              <span>设备列表管理</span>
+              <span>设备管理</span>
             </el-menu-item>
 
             <el-menu-item index="/manager/user" v-if="userInfo?.role === 'admin'">
@@ -61,7 +61,7 @@
 
             <el-menu-item index="/manager/aichat" v-if="userInfo?.role === 'student'">
               <el-icon><ChatDotRound /></el-icon>
-              <span>AI智能助手</span>
+              <span>AI 智能助手</span>
             </el-menu-item>
 
             <el-menu-item index="/manager/lablist" v-if="userInfo?.role === 'student'">

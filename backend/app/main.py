@@ -1,10 +1,11 @@
 import asyncio
 from contextlib import asynccontextmanager, suppress
+import logging
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
-from app.config import UPLOAD_DIR
+from app.config import UPLOAD_DIR, settings
 from app.models.user import User
 from app.models.lab import Lab
 from app.models.equipment import Equipment
@@ -18,13 +19,20 @@ from app.common.exceptions import (
     validation_exception_handler,
     global_exception_handler,
 )
-from app.services import reservation_service
+from app.services import kb_service, reservation_service
 
 Base.metadata.create_all(bind=engine)  # 自动创建数据库表结构
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if settings.KB_WARMUP_ON_STARTUP:
+        try:
+            await asyncio.to_thread(kb_service.warmup)
+        except Exception:
+            logger.exception("知识库预热失败，后端继续启动；请检查本地向量模型缓存")
     task = asyncio.create_task(
         reservation_service.run_expire_scan()
     )  # 启动项目 开启异步的扫描任务

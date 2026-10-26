@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     LLM_MODEL: str
     LLM_BASE_URL: str
 
+    # Knowledge-base models are loaded lazily from the local cache by default.
+    KB_WARMUP_ON_STARTUP: bool = True
+
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env", env_file_encoding="utf-8"
     )

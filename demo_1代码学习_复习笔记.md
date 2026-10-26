@@ -1,6 +1,6 @@
 # demo_1 代码学习：从基础搭建到预约与 AI
 
-整理日期：2026-10-24。
+整理日期：2026-10-26。
 
 > **学习目标**：理解 lab-agent 的设计与代码，并能从空目录创建、配置、运行和检查项目。
 >
@@ -8,9 +8,9 @@
 >
 > **版本与验证**：基础章节含 learning-demo 教学整合示例，后续章节含原项目的阶段快照。不要混合不同日期的完整文件。“已实现”“已讲解”“历史检查通过”“待验收”分别记录；历史测试数量不能当作本次重新运行的结果。
 
-当前项目已包括用户与资源管理、学生浏览、预约提交/查询/取消/审核、待审核自动过期、AI/RAG 和两项只读资源查询工具。时段空闲查询、AI 自动预约、真实 MySQL 并发、真实模型与浏览器完整验收仍待完成。
+当前项目已包括用户与资源管理、学生浏览、预约主要流程与自动过期，以及框架 Agent 的五个工具。聊天现使用 POST SSE，逐步显示状态、工具过程和正文；自定义方案与框架 JSON 方案继续保留用于对照。强制确认、幂等、流式会话清理与工具并发、时段空闲查询及真实环境完整验收仍需完善。
 
-本笔记不保存数据库密码、JWT 密钥或真实 token。示例占位值需要替换为学习环境自己的配置。早期 docs 审查文件及 backend/tests、frontend/tests 当前不在工作区，相关命令与结果仅保留为历史学习资料，详见[验证记录](#historical-regression)。
+本笔记不保存数据库密码、JWT 密钥或真实 token。示例占位值需替换为学习环境配置。早期 docs 与原后端/前端回归文件未恢复，旧结果见[历史验证记录](#historical-regression)；当前已有 frontend/tests/ai.test.js，7 项 SSE 解析测试的本次结果见[流式验收](#sse-validation)，不要与旧测试数量合并。
 
 ## 目录
 
@@ -39,7 +39,7 @@
 **第四部分 · AI 与工具调用**
 
 14. [AI 对话、向量知识库与 RAG](#20-ai-rag)
-15. [Tool Calling：工具定义、执行循环与资源查询](#22-tool-calling)
+15. [Agent 两种实现与 SSE：自定义工具循环、LangChain / LangGraph](#22-tool-calling)
 
 **第五部分 · 整体联调与最终验收**
 
@@ -63,7 +63,9 @@
 | reservation_service.py 的创建与事务                 | [预约提交与并发](#reservation-concurrency)                                         |
 | reservation_service.py 的查询、取消、审核与过期扫描 | [预约完整流程](#18-reservation-workflow)、[过期扫描代码](#reservation-expiry-code) |
 | kb_service.py、AIChat.vue 与 RAG                    | [AI 与知识库](#20-ai-rag)                                                          |
-| ai_config.py、ai_service.run_tool 与工具循环        | [Tool Calling](#22-tool-calling)                                                   |
+| ai_config.py、ai_service.run_tool 与旧自定义循环 | [保留的自定义方案](#22-tool-calling) |
+| agent_service.py、agent_config.py 与框架基础 | [框架 JSON 阶段](#langchain-langgraph-agent)、[逐项对照](#agent-framework-comparison) |
+| chat_stream、stream_agent、chatStreamApi 与 AIChat.vue | [当前 SSE 输出](#agent-sse)、[流式验收](#sse-validation) |
 
 首次搭建从第一部分开始；追踪一次实际操作可先看[整项目执行路线](#19-code-flow)；核对剩余工作可直接看[遗留问题与最终验收](#10-pending)。
 
@@ -138,7 +140,7 @@ Home.vue
 | 原 lab-agent  | 8000     | 5173     | 对照原代码   |
 | learning-demo | 8001     | 5174     | 练习从零编写 |
 
-基础学习副本最初只覆盖注册、登录、当前用户和上传。原项目现已包含用户与资源管理、学生浏览、预约提交/查询/取消/审核、自动过期、AI/RAG 和两项只读查询工具；时段空闲查询与 AI 自动预约仍未实现。请根据本章阶段说明区分学习副本和原项目。
+基础学习副本最初只覆盖注册、登录、当前用户和上传。原项目现已包含用户与资源管理、学生浏览、完整预约主要流程、自动过期与框架 Agent。Agent 已提供真实创建预约工具；提示词要求确认，服务端强制确认与完整验收仍待完善。旧自定义只读工具版本保留在第 15 章用于对照，请区分学习副本、历史阶段和当前入口。
 
 本笔记的整合代码用于 **learning-demo**，不需要覆盖原项目。为方便复习，下面把前面分次添加的代码合并在一起，JWT 工具文件统一命名为 `app/utils/token.py`。它不是原仓库所有文件的逐字副本，页面样式只保留学习所需内容。
 
@@ -1574,7 +1576,7 @@ api.include_router(user_router)
 
 ### 6.4 基础学习阶段的后端入口整合版
 
-阶段说明：下面是早期入口。当前 main.py 已通过 lifespan 启动预约过期扫描，关闭时取消并等待任务；更新代码见第 6.5 节。
+阶段说明：下面是早期入口。第 6.5 节讲扫描的启动与关闭；2026-10-25 入口还增加了知识库预热，当前完整 main.py 与配置见第 6.8 节。
 
 `backend/app/main.py`：
 
@@ -1654,6 +1656,8 @@ def count_users(db: Session = Depends(get_db)):
 <a id="app-lifespan"></a>
 
 ### 6.5 应用生命周期：启动扫描、取消任务并等待关闭
+
+本节保留扫描生命周期的讲解。当前入口在创建扫描任务前先按配置等待知识库预热，完整顺序见第 6.8 节。
 
 main.py 的关键部分：
 
@@ -1926,6 +1930,172 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 @app.get("/")
 def root():
     return {"message": "Hello, World!"}
+```
+
+</details>
+
+<a id="kb-startup-lifecycle"></a>
+
+### 6.8 当前入口：知识库预热与扫描任务的先后顺序（2026-10-25）
+
+2026-10-26 补充：本节 main.py 的预热与创建任务顺序仍适用；被调用的 run_expire_scan 已线程化并处理取消，具体变化归入[预约扫描](#expiry-thread-scan)。流式接口的依赖 Session 清理是另一问题，见[流式会话生命周期](#sse-session-lifecycle)。
+
+第 6.5～6.7 节保留扫描生命周期与早期入口。当前 main.py 在创建扫描任务之前增加知识库预热，Settings 的 `KB_WARMUP_ON_STARTUP` 源码默认值为 True，环境配置可覆盖它。
+
+```text
+导入配置、数据库、模型与路由 → 创建 FastAPI 应用
+  → lifespan 启动
+  → 开关为 true：await asyncio.to_thread(kb_service.warmup)
+      → 准备本地向量模型与 Chroma 集合；非空集合执行一次预热查询
+      → 失败记录 logger.exception，然后继续启动
+  → 开关为 false：跳过预热
+  → create_task(run_expire_scan())
+  → yield：服务接收请求
+  → finally：取消扫描任务并等待它结束
+```
+
+to_thread 将同步预热工作交给线程执行；await 仍会等待它完成，因此这不是启动后放任执行的后台预热任务。默认预热完成或失败被捕获后，才安排预约扫描。预热失败不阻止其他后端接口启动，也不说明知识工具已可用。
+
+kb_service 的模块级 `_embedding_fn` 现在初始为 None，不再一导入就加载模型。设置 false 时，模型和集合延迟到首次实际检索；设置 true 时，warmup 会提前触发加载与空集合入库。当前只读取本地模型缓存，具体配置与检索实现见第 14.19～14.20 节。
+
+以下快照来自当前源码。配置文件只声明字段，不包含 `.env` 中的真实连接、密钥或令牌；保留前面的历史入口便于比较新增生命周期步骤。
+
+<details>
+<summary><code>backend/app/main.py</code>（2026-10-25）</summary>
+
+```python
+import asyncio
+from contextlib import asynccontextmanager, suppress
+import logging
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
+from fastapi.staticfiles import StaticFiles
+from app.config import UPLOAD_DIR, settings
+from app.models.user import User
+from app.models.lab import Lab
+from app.models.equipment import Equipment
+from app.models.reservation import Reservation
+from app.database import engine, Base
+from app.api import api
+from app.common.exceptions import (
+    BusinessException,
+    business_exception_handler,
+    http_exception_handler,
+    validation_exception_handler,
+    global_exception_handler,
+)
+from app.services import kb_service, reservation_service
+
+Base.metadata.create_all(bind=engine)  # 自动创建数据库表结构
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if settings.KB_WARMUP_ON_STARTUP:
+        try:
+            await asyncio.to_thread(kb_service.warmup)
+        except Exception:
+            logger.exception("知识库预热失败，后端继续启动；请检查本地向量模型缓存")
+    task = asyncio.create_task(
+        reservation_service.run_expire_scan()
+    )  # 启动项目 开启异步的扫描任务
+    try:
+        yield
+    finally:
+        task.cancel()  # 关闭项目 同时取消异步任务
+        with suppress(asyncio.CancelledError):
+            await task
+
+
+app = FastAPI(lifespan=lifespan)
+
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,  # 允许的前端源，不要直接写 ["*"]
+    allow_credentials=True,  # ✅ 关键：允许前端携带 Authorization token
+    allow_methods=["*"],  # 允许所有请求方法 GET POST PUT DELETE OPTIONS
+    allow_headers=["*"],  # 允许所有请求头（包含Authorization）
+)
+
+app.include_router(api)
+
+# 注册异常处理器
+app.add_exception_handler(BusinessException, business_exception_handler)
+app.add_exception_handler(HTTPException, http_exception_handler)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+# 全局的异常兜底, 必须放在最后注册!!!
+app.add_exception_handler(Exception, global_exception_handler)
+
+# 挂载静态的文件目录 http://127.0.0.1:8000/uploads/xxx.jpg
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+
+@app.get("/")
+def root():
+    return {"message": "Hello, World!"}
+```
+
+</details>
+
+<details>
+<summary><code>backend/app/config.py</code>（2026-10-25）</summary>
+
+```python
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent  # 后端项目的根路径
+
+
+class Settings(BaseSettings):
+    # Database settings
+    DATABASE_URL: str
+
+    # JWT settings
+    JWT_SECRET_KEY: str
+    JWT_EXPIRE_HOURS: int = 24
+    JWT_ALGORITHM: str = "HS256"
+
+    # LLM setting
+    LLM_API_KEY: str
+    LLM_MODEL: str
+    LLM_BASE_URL: str
+
+    # Knowledge-base models are loaded lazily from the local cache by default.
+    KB_WARMUP_ON_STARTUP: bool = True
+
+    model_config = SettingsConfigDict(
+        env_file=BASE_DIR / ".env", env_file_encoding="utf-8"
+    )
+
+
+settings = Settings()
+
+UPLOAD_DIR = BASE_DIR / "uploads"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
+
+ALLOWED_EXTENSIONS = {
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".webp",
+    ".pdf",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".zip",
+}
 ```
 
 </details>
@@ -15124,6 +15294,8 @@ if changed:
 
 ### 13.17 扫描周期、异步等待与执行边界
 
+以下是 2026-10-23 的同步调用阶段；当前已将扫描放到线程，见第 13.29 节。
+
 ```python
 async def run_expire_scan():
     while True:
@@ -15362,7 +15534,7 @@ import { Search } from "@element-plus/icons-vue";
 
 这些临时检查没有保存为新增测试文件。它们不包含真正的 HTTP 登录与鉴权请求、真实浏览器交互、MySQL/InnoDB 锁竞争、旧库迁移，也不证明界面图标和加载提示已经正确。审核权限的依赖绑定核对与 service 的业务校验检查，也不能代替完整 HTTP 权限测试。
 
-当前工作区缺少原 backend/tests、frontend/tests 和 docs 审查文件。[历史回归记录](#historical-regression)中的 19 项后端与 6 项登录测试是历史结果，不能写成“本轮重新运行全部通过”。package.json 虽仍有 test 脚本，恢复测试文件前应检查实际发现的用例数。
+原后端测试、前端登录测试与 docs 审查文件仍未恢复。[历史回归记录](#historical-regression)中的 19 项后端与 6 项登录测试是历史结果；2026-10-26 新增的 frontend/tests/ai.test.js 为独立的 SSE 解析测试，结果见第 15.61 节，不能视为旧用例重新通过。运行测试命令时应检查实际发现的文件和用例数。
 
 本地可重复运行的基础检查命令如下，分别在对应目录执行：
 
@@ -16320,11 +16492,38 @@ export default defineConfig({
 });
 ```
 
+<a id="expiry-thread-scan"></a>
+
+### 13.29 当前扫描：to_thread 与取消收尾（2026-10-26）
+
+第 13.17～13.18 节保留早期同步扫描的讲解与快照。本轮 run_expire_scan 将数据库扫描移入线程：
+
+```python
+async def run_expire_scan():
+    """扫描执行业务"""
+    try:
+        while True:
+            await asyncio.to_thread(expire_pending_reservations)
+            await asyncio.sleep(60)
+    except asyncio.CancelledError:
+        return
+```
+
+await asyncio.to_thread(expire_pending_reservations) 把同步数据库工作交给工作线程，避免直接阻塞同一事件循环中的 SSE 等异步任务；外层仍等待这一轮扫描完成，再 sleep(60)。因此扫描间隔仍是“扫描耗时 + 60 秒”，当前单个循环不会主动重叠启动两次扫描。
+
+expire_pending_reservations 内部创建独立 Session，finally 关闭；这里没有把接口的 db 会话传给线程。过期判定和 status=0 → 3 的规则未变，审核/取消/扫描的竞争也没有因此自动解决。
+
+新循环捕获 CancelledError 后 return，main.py 仍负责 task.cancel() 并 await。取消等待中的协程不等于强制停止已经开始的线程工作：扫描可能继续完成数据库操作，再执行自己的会话清理。当前没有额外等待线程工作结束的应用级机制，也没有针对普通扫描异常的日志重试，不能把这项改动表述为“后台任务所有失败与退出问题都修好了”。[Python 线程执行说明](https://docs.python.org/3/library/asyncio-task.html#asyncio.to_thread)
+
+真实验收应同时观察长扫描期间的聊天事件到达、无数据/已过期记录、停服时正在执行的数据库操作，以及多进程部署是否重复扫描。当前仅核对源码，未对业务数据库运行扫描。
+
 <a id="20-ai-rag"></a>
 
 ## 14. AI 对话、向量知识库与 RAG
 
 阶段起点：2026-10-23。本章解释消息结构、向量知识库、检索、提示词和前端发送，并把对应错误复盘放在发生位置。代码快照保留加入工具前的基础 RAG 版本；2026-10-24 的数据库只读工具、最多 3 轮模型调用与 60 秒超时在下一章接续。
+
+**2026-10-25 当前说明**：第 14.1～14.18 节是基础阶段，保留用于比较固定前置 RAG；第 14.19～14.20 节说明本地缓存与预热的当前实现。聊天由框架 Agent 按工具请求检索，并提供创建预约工具；框架基础见第 15.20 节之后，2026-10-26 当前 SSE 执行入口见第 15.42 节之后。
 
 ### 14.1 当前阶段实现了什么
 
@@ -16971,11 +17170,156 @@ const handleSend = async () => {
 </script>
 ```
 
+<a id="kb-local-cache"></a>
+
+### 14.19 当前知识库：本地模型缓存、延迟加载与预热（2026-10-25）
+
+前面保留 2026-10-23 的基础 RAG 教程；本节说明当前 kb_service 的变化。BGE、Chroma、按文件入库与距离筛选仍然复用，模型准备时机和错误反馈有调整。
+
+| 位置 | 当前写法 | 与早期版本的区别 |
+| --- | --- | --- |
+| 模块变量 | `_embedding_fn = None`，另有 EMBEDDING_MODEL_NAME | 导入模块不立即创建嵌入模型 |
+| get_embedding_fn | 首次建立模型，之后复用进程内对象 | 实际加载延迟到调用点 |
+| 模型构造 | `local_files_only=True` | 只读取已准备的本地缓存，不在应用加载中自动下载缺失文件 |
+| 缓存加载异常 | 捕获 OSError，抛出 BusinessException(code=503) | 给出预先下载模型的操作说明；其他异常仍按上层路径处理 |
+| get_collection | 绑定 get_embedding_fn()，空集合才初始化 | 未改变原文不会自动同步的边界 |
+| warmup | 先 get_collection，集合非空再查询一次“预热” | 提前准备模型/集合及一次查询，不访问聊天模型 |
+
+从 backend 目录，在可联网环境使用后端虚拟环境准备完整缓存：
+
+```powershell
+.\.venv\Scripts\python.exe -c "from huggingface_hub import snapshot_download; snapshot_download('BAAI/bge-small-zh-v1.5')"
+```
+
+这个命令仅供准备环境，本次文档更新没有执行下载。向量模型缓存与 backend/data/chroma 是两个位置；有 Chroma 文件不代表 BGE 缓存完整，也不保证集合与当前模型匹配。
+
+当前源码的预热默认开关是 True。若在 `.env` 中设 `KB_WARMUP_ON_STARTUP=false`，则跳过启动预热，由第一次实际 search_lab_docs 检索触发加载。设为 true 时，main.py 等待 warmup；失败记录日志并继续启动。环境配置可覆盖默认值，本文不读取或展示真实 `.env`。
+
+warmup 不会刷新已经有数据的集合；改了 Markdown 仍需同步索引。预热异常与工具检索异常的呈现路径不同：前者由 main.py 记录日志，后者被 search_lab_docs 包装成工具错误结果交回模型。原知识规则与业务实现的冲突也仍需按第 14.13 节核对。
+
+### 14.20 当前 kb_service.py 代码快照（2026-10-25）
+
+这份完整快照用于当前框架版本。第 14.18 节继续保留早期模块级模型加载的快照；两份快照不要混用。新版 Agent 如何把 search 包装成工具，见第 15.30 节。
+
+<details>
+<summary><code>backend/app/services/kb_service.py</code>（2026-10-25）</summary>
+
+```python
+import chromadb
+from chromadb.api.models.Collection import Collection
+from chromadb.utils import embedding_functions
+from app.common.exceptions import BusinessException
+from app.config import BASE_DIR
+
+KB_DIR = BASE_DIR / "data" / "kb"
+CHROMA_DIR = BASE_DIR / "data" / "chroma"
+
+_collection = None
+_embedding_fn = None
+EMBEDDING_MODEL_NAME = "BAAI/bge-small-zh-v1.5"
+
+
+def get_embedding_fn():
+    global _embedding_fn
+    if _embedding_fn is not None:
+        return _embedding_fn
+    try:
+        _embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name=EMBEDDING_MODEL_NAME,
+            local_files_only=True,
+        )
+    except OSError as exc:
+        raise BusinessException(
+            message=(
+                "知识库向量模型的本地缓存缺失或不完整，请先在可访问 Hugging Face 的网络下，"
+                "使用后端虚拟环境执行：python -c \"from huggingface_hub import "
+                "snapshot_download; snapshot_download('BAAI/bge-small-zh-v1.5')\""
+            ),
+            code=503,
+        ) from exc
+    return _embedding_fn
+
+
+def get_collection() -> Collection:
+    """向量库的初始化"""
+    global _collection
+    if _collection is not None:
+        return _collection
+    KB_DIR.mkdir(parents=True, exist_ok=True)
+    CHROMA_DIR.mkdir(parents=True, exist_ok=True)
+    client = chromadb.PersistentClient(path=str(CHROMA_DIR))
+    col = client.get_or_create_collection(
+        name="lab_kb", embedding_function=get_embedding_fn()
+    )
+    if col.count() == 0:
+        ids = []
+        docs = []
+        metas = []
+        for path in sorted(KB_DIR.glob("*.md")):
+            text = path.read_text(encoding="UTF-8").strip()
+            if not text:
+                continue
+            docs.append(text)
+            ids.append(path.stem)
+            metas.append({"source": path.name})
+        if docs:
+            col.add(ids=ids, documents=docs, metadatas=metas)
+    _collection = col
+    return _collection
+
+
+def warmup():
+    """启动的时候初始化向量库  启动预热"""
+    col = get_collection()
+    if col.count() > 0:
+        col.query(query_texts=["预热"], n_results=1)
+
+
+def search(query: str):
+    """根据关键字去检索向量库"""
+    col = get_collection()
+    if col.count() == 0:
+        return ""
+    limit = min(5, col.count())
+    res = col.query(query_texts=[query], n_results=limit)
+    docs = (res.get("documents") or [[]])[0]  # [list]
+    metas = (res.get("metadatas") or [[]])[0]  # [list]
+    distances = (res.get("distances") or [[]])[0]
+    """
+    以下是检索出来的资料:
+    [预约规则.md]
+
+    # 实验室预约规则...
+
+
+    [安全规范.md]
+
+    安全规范....
+    """
+    score_parts = []
+    for doc, meta, dist in zip(docs, metas, distances):
+        # 0-1    越接近1表示越相关
+        score = 1 / (1 + dist)
+        if score < 0.5:
+            continue
+        name = meta.get("source") or ""
+        score_parts.append({"score": score, "content": f"[{name}]\n{doc}"})
+    score_parts.sort(key=lambda x: x["score"], reverse=True)
+    final_parts = [item["content"] for item in score_parts[:2]]
+    return "\n\n".join(final_parts)
+```
+
+</details>
+
 <a id="22-tool-calling"></a>
 
-## 15. Tool Calling：工具定义、执行循环与资源查询
+## 15. Agent 两种实现与 SSE：自定义工具循环、LangChain / LangGraph
 
-阶段起点：2026-10-24。接续 AI/RAG，本章讲模型如何提出工具请求、后端如何执行只读资源查询，以及工具结果如何回到模型。README 第 16 节提供路线图。示例中的名称、ID 和调用 ID 均为演示值。
+本章按两种实现、三个阶段对照学习：第 15.1～15.19 节保留 2026-10-24 自定义 Tool Calling；第 15.20～15.41 节保留 2026-10-25 框架 JSON 方案；第 15.42～15.63 节讲当前框架 SSE 方案。当前注册的是 /chat/stream，旧 /chat 与 run_agent 已注释。示例名称、ID 和调用 ID 均为演示值。
+
+阅读导航：[旧自定义执行路线](#22-tool-route) → [框架 JSON 阶段](#langchain-langgraph-agent) → [两种实现对照](#agent-framework-comparison) → [当前 SSE 完整调用链](#agent-sse) → [流式测试与验收](#sse-validation)。
+
+**以下第 15.1～15.19 节描述旧方案。** 其中“当前”“两项只读工具”“最多 3 轮”“未提供预约写入”等表述均属于该阶段；原 data/tools/ai_config.py 现移至 data/config_global/ai_config.py，历史快照中的路径与内容继续保留。
 
 ### 15.1 工具调用的文件地图
 
@@ -17061,7 +17405,7 @@ sequenceDiagram
 2. [前端 ai.js](frontend/src/api/ai.js)：chatApi；继续经过 utils/request.js 的 token 与响应拦截器。
 3. [后端 api/ai.py](backend/app/api/ai.py)：`@router.post("/chat")` 的 chat 函数。
 4. [ai_service.py](backend/app/services/ai_service.py)：chat → kb_service.search → 模型请求 → run_tool。
-5. [ai_config.py](backend/data/tools/ai_config.py)：SYSTEM_PROMPT 与 TOOLS，为模型请求提供配置。
+5. [ai_config.py（现保留路径）](backend/data/config_global/ai_config.py)：SYSTEM_PROMPT 与 TOOLS，为模型请求提供配置。
 6. [lab_service.py](backend/app/services/lab_service.py) 的 get_lab_page_list；[equipment_service.py](backend/app/services/equipment_service.py) 的 get_equipment_page_list。
 7. 回到 chat：追加结果消息，下一轮请求模型，最后返回正文字符串。
 
@@ -17793,6 +18137,2036 @@ const handleSend = async () => {
 </script>
 ```
 
+<a id="langchain-langgraph-agent"></a>
+
+### 15.20 两套实现怎样并存：保留旧代码，明确当前入口
+
+第 15.20～15.41 节按 2026-10-25 工作区讲解框架 JSON 版本，保留正文和快照用于对比。下面的“当前 /chat”“60 秒”“串行工具”“最终内容校验”等结论限于该阶段；2026-10-26 实际 SSE 入口及变化见[第 15.42 节起](#agent-sse)。先区分“文件仍在”“模块仍被导入”和“接口实际调用了哪个函数”。
+
+| 层次 | 保留的自定义实现 | 当前框架实现 |
+| --- | --- | --- |
+| 调度服务 | `backend/app/services/ai_service.py`，手写 chat/run_tool | `backend/app/services/agent_service.py`，build_agent/run_agent |
+| 工具配置 | `backend/data/config_global/ai_config.py`，SYSTEM_PROMPT/TOOLS | `backend/data/config_global/agent_config.py`，SYSTEM_PROMPT/build_tools |
+| API 调用 | `ai_service.chat(db=db, data=data)`，旧路由函数已注释 | `agent_service.run_agent(db=db, current_user=current_user, data=data)` |
+| 消息与执行循环 | 字典、JSON 参数、for 循环和手工追加工具消息 | LangChain 消息对象、工具对象与 LangGraph 图执行 |
+| 当前工具能力 | 两项只读资源查询；进入循环前固定检索知识 | 五个工具；按模型工具请求检索、查询资源、获取日期和创建预约 |
+
+旧版 `ai_config.py` 从 `data/tools` 移到了 `data/config_global`；`ai_service.py` 的 import 已相应改变。第 15.19 节保存的 `backend/data/tools/ai_config.py` 是 2026-10-24 的路径，不表示今天应再建一份同名目录。复习旧版时，讲解与代码快照继续有效，定位现有文件用新路径。
+
+当前 `api/ai.py` 仍导入 `ai_service`，但正在注册的 `/chat` 函数调用 `agent_service`。因此旧模块可能参与 Python 导入，旧 chat/run_tool 并不处理当前 HTTP 聊天请求。代码没有根据提问自动选择两套 Agent，也没有提供运行时切换开关。
+
+建议按第 15.1～15.19 节理解协议细节，再读本节之后的框架实现，最后看[逐项对照](#agent-framework-comparison)。旧实现有意保留，便于看清哪些工作交给框架、哪些业务仍由项目负责。
+
+### 15.21 LangChain 与 LangGraph 分别负责什么
+
+本次 requirements.txt 新增：
+
+```text
+langgraph==1.2.11
+langchain-openai==1.6.2
+langchain-core==1.6.3
+```
+
+| 本项目使用的组件 | 来自哪里 | 在项目中的职责 |
+| --- | --- | --- |
+| ChatOpenAI | langchain_openai | 读取聊天服务配置，调用兼容接口，返回 AIMessage |
+| SystemMessage/HumanMessage/AIMessage | langchain_core.messages | 表达系统指令、用户输入和助手消息 |
+| @tool | langchain_core.tools | 把带类型标注的函数包装为可描述、可调用的工具 |
+| MessagesState/StateGraph/START | langgraph.graph | 定义消息状态与节点执行关系 |
+| ToolNode/tools_condition | langgraph.prebuilt | 执行工具、生成工具结果消息，并决定是否继续工具路径 |
+
+LangChain 在这里提供模型、消息与工具抽象；LangGraph 负责把“调用模型 → 执行工具 → 再调用模型”组织成图。项目直接使用 StateGraph，没有调用高层 `create_agent()`，也没有新增一个名为 `langchain` 的直接依赖行。安装以当前 requirements.txt 为准，传递依赖交给包管理器处理。
+
+改成框架后，FastAPI、SQLAlchemy、Pydantic、业务 service、Chroma 和前端仍在原来的位置。框架不会替项目决定谁能预约、哪些时段冲突、写入成功后是什么状态。
+
+### 15.22 从网页输入到图执行：先看完整路线
+
+当前前端仍发送同一个 `/api/ai/chat` 请求，返回值也仍是统一 Response 包裹的 ChatMessage。
+
+```mermaid
+flowchart TD
+    V["AIChat.vue → chatApi"] --> API["POST /api/ai/chat：取得 current_user 和 db"]
+    API --> RUN["run_agent：过滤历史，构造消息对象"]
+    RUN --> BUILD["build_tools + ChatOpenAI.bind_tools + compile"]
+    BUILD --> START["START：SystemMessage + history"]
+    START --> A["agent：model.invoke"]
+    A --> C{"tools_condition：末条消息有工具调用？"}
+    C -->|有| T["tools：ToolNode 执行允许的工具"]
+    T --> K["知识库 / 日期 / 资源查询 / 预约 service"]
+    K --> M["ToolMessage 合并到 messages"]
+    M --> A
+    C -->|无| E["结束图执行"]
+    E --> CHECK["检查最终 AIMessage，提取文本"]
+    CHECK --> OUT["Response.success → Markdown 页面"]
+```
+
+图中一次 `agent` 节点调用才对应一次模型请求；一个 HTTP 请求可能经过多次模型和工具节点。模型是否调用工具以及调用顺序由消息与模型响应决定，流程图不是“每次一定执行全部五个工具”。
+
+源码把图变量拼成 `gragh`，注释中也有 `LangGragh`；本文使用框架正式名称 LangGraph，代码快照保留源码写法，查找时搜索 build_agent、StateGraph 或 gragh 都能定位。
+
+### 15.23 API 怎样传递当前用户与数据库会话
+
+`api/ai.py` 的关键调用是：
+
+```python
+content = agent_service.run_agent(db=db, current_user=current_user, data=data)
+```
+
+`current_user` 来自 `Depends(get_current_user)`，`db` 来自 `Depends(get_db)`。run_agent 将它们交给 build_agent，build_agent 再交给 build_tools。当前身份不由模型填写，也不是从聊天正文中解析出来的 user_id。
+
+```text
+API 的登录用户与请求 Session
+  → run_agent(db, current_user, data)
+  → build_agent(db, current_user)
+  → build_tools(db, current_user)
+  → create_lab_reservation 的函数闭包
+  → reservation_service.create_reservation(db, current_user, data)
+```
+
+build_tools 在函数内部定义五个工具。内部函数可以使用外层的 db 和 current_user，这叫闭包；例如创建预约工具签名只列资源、日期、时段等参数，没有让模型传入用户对象和数据库会话。
+
+每次 HTTP 请求都会重新创建工具和图，绑定这次请求的上下文。不能把这一版包含请求 Session 和用户对象的图直接缓存为所有用户共用的全局对象，否则会混用请求上下文。
+
+### 15.24 @tool：从函数签名生成工具描述与参数结构
+
+看当前最简单的工具：
+
+```python
+@tool
+def get_today() -> str:
+    """获取服务器当前日期，格式为 YYYY-MM-DD"""
+    now = datetime.now()
+    return now.strftime("%Y-%m-%d")
+```
+
+默认工具名来自函数名，说明来自 docstring，参数类型与默认值用于推导输入结构。装饰后的 get_today 是 LangChain 工具对象，build_tools 返回的是工具对象列表，供模型绑定和 ToolNode 使用。[官方工具说明](https://docs.langchain.com/oss/python/langchain/tools)
+
+在本项目中，`list_lab_equipments(lab_id: int, keywords: str = "")` 的 lab_id 没有默认值，因此成为必填参数；keywords 有默认值，可以省略。`equipment_id: int | None = None` 表示允许不指定设备，从而提交整间实验室预约。
+
+这改善了旧 JSON schema 没声明 lab_id 必填的情况，但不能推导出所有业务限制。`int` 本身不要求正数，`date: str` 不代表日期一定存在；开放时间、归属、状态与冲突仍需 schema/service 检查。把函数装饰成工具，也不会替它增加“用户已确认”的校验。
+
+### 15.25 bind_tools 与 ToolNode：模型看见工具和后端执行工具
+
+当前模型构造最后调用：
+
+```python
+model = ChatOpenAI(
+    api_key=settings.LLM_API_KEY,
+    base_url=settings.LLM_BASE_URL,
+    model=settings.LLM_MODEL,
+    temperature=0,
+).bind_tools(tools)
+```
+
+bind_tools 让后续模型请求携带工具描述；ToolNode(tools) 则在模型返回结构化工具调用后执行相应工具。这两处使用同一份 tools。只把 ToolNode 放进图，不会自动让模型知道可用工具；只 bind_tools，也不会让 Python 函数自行执行。[模型工具调用说明](https://docs.langchain.com/oss/python/langchain/models#tool-calling)
+
+LLM_BASE_URL 和 LLM_MODEL 必须对应支持结构化工具调用的兼容服务。`temperature=0` 是生成参数，不是“结果保证正确”或“每次保证同样调用工具”。新版没有在代码中要求每轮都调用工具，普通问候可以直接回答。
+
+### 15.26 三种输入消息与 ToolMessage：为何不再手工拼字典
+
+run_agent 遍历 ChatRequest.messages，当前规则是：
+
+| 输入 | 处理方式 |
+| --- | --- |
+| 非空 user 内容 | strip 后转成 HumanMessage |
+| 非空 assistant 内容 | strip 后转成 AIMessage |
+| 空白内容或其他 role | 不进入 history |
+| 原 messages 为空，或过滤后 history 为空 | 抛出业务异常 |
+
+系统提示词从 agent_config 导入，构造 SystemMessage 并放在 history 前面。客户端提交的 system/tool 消息不会作为系统指令或工具结果直接进入图。当前仍允许仅含 assistant 的非空历史，没有额外要求必须以 user 结尾。
+
+模型返回 AIMessage，可能含正文，也可能含 tool_calls。工具执行后由 ToolNode 生成 ToolMessage，关联具体工具调用 ID，再交给模型。旧方案里手写的 assistant 工具请求与 role=tool 结果配对，变成了框架消息类型和工具节点的职责。
+
+过滤 role 并不证明历史文本可信：user/assistant 内容仍来自前端，特别是先前“已确认”的助手文字不能作为服务端业务确认凭据。
+
+### 15.27 MessagesState：节点只返回增量，历史为什么还在
+
+agent_node 读取完整消息，再返回这一轮响应：
+
+```python
+def agent_node(state: MessagesState):
+    response = model.invoke(state["messages"])
+    return {"messages": [response]}
+```
+
+这里返回的是状态更新，不是自己重新构造全部历史。当前安装包的 MessagesState 为 messages 配置了 add_messages：新 ID 消息通常追加，已有 ID 消息按 ID 更新。因此返回 `[response]` 后，系统消息、用户问题和前面的工具结果仍留在状态中。
+
+不要把这里改成无 reducer 的普通列表状态，再以为相同写法仍会合并；也不要无理由把全部旧消息连同新消息重复返回。状态 schema 的合并规则决定了节点输出如何生效。[Graph API 的消息状态说明](https://docs.langchain.com/oss/python/langgraph/graph-api#working-with-messages-in-graph-state)
+
+### 15.28 StateGraph、条件边与 compile 怎样接起循环
+
+当前 build_agent 注册两个节点：agent 与 tools。普通边 `START → agent` 决定入口，`tools → agent` 让模型读取工具结果。agent 后面使用条件边：
+
+```python
+gragh.add_conditional_edges("agent", tools_condition)
+```
+
+tools_condition 检查末条消息的工具调用：有调用时返回 tools 路径，否则走结束路径。这里的工具节点名字恰好叫 `"tools"`，与默认路由值对应；如果只重命名节点而不调整条件路由，图就不再按原设计连接。[tools_condition 参考](https://reference.langchain.com/python/langgraph.prebuilt/tool_node/tools_condition)
+
+`compile()` 把图定义编译成可执行对象，不会立即请求模型或执行预约。实际运行发生在 `agent.invoke(...)`。虽然源码只显式导入 START，没有导入 END，条件函数仍可将流程路由到结束状态。
+
+### 15.29 五个工具分别调用哪里，返回什么
+
+| 工具 | 模型提供的参数 | 实际调用 | 输出及当前范围 |
+| --- | --- | --- | --- |
+| search_lab_docs | query | kb_service.search | 检索文本，或“没有检索到相关的资料”；失败返回 JSON error |
+| list_open_labs | 可选 keywords | lab_service.get_lab_page_list | 第 1 页、最多 10 条 status=1 的实验室及 total |
+| list_lab_equipments | lab_id、可选 keywords | equipment_service.get_equipment_page_list | 第 1 页、最多 10 条设备及 total；包含数量、状态，不过滤维修设备 |
+| create_lab_reservation | lab_id、date、start_time、end_time；可选 equipment_id、remark | ReservationCreateRequest → reservation_service.create_reservation | 成功 JSON 含 ok、资源 ID、日期、规范化时段；状态为待审核 |
+| get_today | 无 | datetime.now().strftime | 服务器当前日期字符串 |
+
+查询工具的 open 表示启用状态，不是给定时段空闲。设备 quantity 是资料数量，不是扣减预约后的余量。工具不读取任意 SQL，也不接受模型给出的 Python 函数名执行；允许执行的入口由返回的五个工具对象决定。
+
+项目仍未提供 AI 取消、审核、查询本人预约的工具，也没有单独的时段可用性工具。创建时会校验冲突，不代表查询资料时已计算空闲。
+
+### 15.30 RAG 的位置改变：从固定前置检索到模型可选工具
+
+旧 ai_service.chat 每次先找最近的 user 问题，调用 kb_service.search，再把资料追加到 system_prompt。新 run_agent 不再固定执行这段检索：模型通过 search_lab_docs 取资料，结果以工具消息参与下一次回答。
+
+底层检索算法没有被整体换成 LangChain Retriever：仍使用现有 Chroma、BGE、Markdown 入库以及最多 5 条候选/前 2 条筛选。改变的是检索的触发入口和结果进入对话的位置。
+
+SYSTEM_PROMPT 要求规则、开放时间问题优先查资料，但当前没有额外代码强制验证模型一定调用 search_lab_docs。资源与日期问题可以使用其他工具，普通聊天也可能无需检索。模型本地缓存、预热、原文与索引同步见第 14.19～14.20 节。
+
+### 15.31 相对日期与确认：两次 HTTP 请求怎样连起来
+
+以“明天上午预约某实验室”为例，以下是符合提示词要求的示意，具体资源 ID 和日期必须来自真实工具结果：
+
+1. 第一次发送问题，前端把已有 user/assistant 历史一并提交。
+2. 模型调用 get_today 得到服务器日期，再据此换算“明天”；查询资源取得真实 ID 和名称。
+3. 若缺少明确开始/结束时间，继续询问；资料完整后复述资源、日期、起止时间，请用户确认。
+4. 本次图结束，确认问题作为普通助手文本返回页面。
+5. 用户发送“确认预约”，这是第二次 POST；前端把前一轮问题、确认摘要和新回复一起发送。
+6. 新建的图从这些文本历史重建上下文，模型调用 create_lab_reservation；工具成功后再答复“已提交，待管理员审核”。
+
+get_today 只返回日期，真正的“明天/后天”换算仍由模型完成。它使用服务器 datetime.now()，代码没有指定业务时区；部署时服务器日期需与预约服务的日期比较保持一致。
+
+当前确认写在 SYSTEM_PROMPT 中，没有 `interrupt()`、确认节点、checkpointer、待确认对象 ID 或服务端 confirmed 字段。它是提示词约定的对话流程，不是后端已强制执行的人工审批。后续若加强确认，需要把用户确认绑定到具体资源与时段，在写入前校验；不能仅因聊天历史里出现“确认”二字就当作不可绕过的授权。
+
+### 15.32 真实预约写入：模型参数经过两层校验
+
+create_lab_reservation 用工具参数构造 ReservationCreateRequest，再调用原预约服务。主要顺序是：
+
+```text
+结构化工具参数
+  → @tool 推导的输入结构进行校验
+  → ReservationCreateRequest：规范化开始/结束时间
+  → create_reservation(db, current_user, data)
+  → 日期/时间、资源状态、设备归属与同资源冲突检查
+  → 原事务锁、失败回滚与死锁重试
+  → 写入 user_id=current_user.id、status=0，并 commit
+  → 工具 JSON 成功结果 → 模型解释 → HTTP 返回
+```
+
+AI 没有自己拼 INSERT，也没有越过原有资源校验。创建服务的完整实现见[预约提交与事务](#reservation-concurrency)，新增工具复用的是同一函数，已有非法日期、零时长及跨资源互斥边界也仍存在。
+
+成功 JSON 返回规范化后的 start_time/end_time，不返回新预约 ID，不能按返回体不存在的 id 去展示详情。成功仅代表已提交待审核申请；最终能否使用仍由管理员审核决定。
+
+一次图执行不是覆盖所有工具的数据库事务。预约服务已经 commit 后，如果后续模型生成失败或前端 60 秒超时，预约记录仍可能存在。应先在“我的预约”核对，再决定是否重试；当前没有请求级幂等键或整图回滚机制。`max_concurrency=1` 也不会自动解决重复提交。
+
+### 15.33 recursion_limit 与 max_concurrency 控制不同的事情
+
+当前调用配置：
+
+```python
+config={"recursion_limit": 10, "max_concurrency": 1}
+```
+
+recursion_limit 限制图一次运行的 super-step 数量，不等于 10 次用户对话、10 个工具或恰好 10 次模型请求。在当前串行环中，agent 与 tools 会交替消耗图步骤；一次 tools 节点还可能包含多个工具调用。源码注释“10 轮对话”可以作为粗略记忆，准确含义应按图步骤理解。[LangGraph 递归限制说明](https://docs.langchain.com/oss/python/langgraph/graph-api#recursion-limit)
+
+max_concurrency=1 用来限制当前同步工具执行的并发度。多个工具共享这次请求的 SQLAlchemy Session，不能让它们同时使用同一会话。本地安装包的同步 ToolNode 使用 get_executor_for_config，执行器读取 max_concurrency 作为工作线程上限，因此这里会逐个执行这一批工具。
+
+串行不等于同一个线程，也不限制其他 HTTP 请求、其他应用进程或后台扫描。图步骤上限不是耗时上限；当前没有额外在 ChatOpenAI 构造中指定模型 timeout，前端 60 秒仍覆盖整个 HTTP 请求。达到步骤上限的框架异常目前会变成通用模型调用失败提示。
+
+### 15.34 最终结果为何还要检查 AIMessage 与回复内容
+
+run_agent 取得 result.messages 的最后一项后，依次检查：
+
+1. messages 是否为空。
+2. 最后一项是否为 AIMessage，且不存在仍待执行的 tool_calls。
+3. 是否含 invalid_tool_calls；有则抛出业务 code=502。
+4. content 为字符串时 strip；为列表时拼接字符串项和字典项中的 text；其他类型按空内容处理。
+5. 用正则检查 `<tool_call>` 或 `<function...>` 形式的伪工具标签；发现则返回业务错误，不作为正常答案展示。
+6. 有非空文本才返回，否则提示没有有效回复内容。
+
+模型写出“调用 create_lab_reservation”或一段 XML 样式标签，不等于工具已经执行。是否真的执行要看结构化工具调用及服务结果。末尾文本检查是针对已知错误格式的防护，不会验证回答中的每个业务事实，也不能撤销此前已经提交的预约。
+
+content 的列表处理是当前代码的简化文本提取，不能据此宣称支持全部多模态响应类型。
+
+### 15.35 异常分三层：工具结果、图执行和 API 响应
+
+| 发生位置 | 当前处理 | 对使用者意味着什么 |
+| --- | --- | --- |
+| 工具内部的检索/查询异常 | 返回 JSON 字符串，含 ok=false/error | 作为工具结果给模型；模型可能解释错误或继续尝试 |
+| 创建预约的 BusinessException | 取 exc.message 放进失败 JSON | 不伪造成功；业务错误文案可以用于回答 |
+| invoke 中的 BusinessException | 原样继续抛出 | 保留现有业务异常信息 |
+| invoke 中其他异常，包括图步数耗尽 | 转成“大模型调用失败，请稍后重试” | 当前没有对各类框架错误分别展示 |
+| 最终内容或伪工具标签检查失败 | 抛出 BusinessException，部分使用 code=502 | 统一异常处理器生成失败响应 |
+
+build_agent 在 try 之前调用，工具构造、模型初始化或图编译失败不受 invoke 那个 except 包裹。输入过滤和最终内容检查也有各自的位置，排错时应先看异常发生在哪一步。
+
+四个有业务执行的工具会捕获异常并返回文本；装饰器层的参数校验不一定进入函数体，不能把所有参数错误都解释成函数中的 except 捕获。应分别观察 ToolNode 结果与最终 API 返回。
+
+本项目 BusinessException 处理器使用 HTTP 200 + body.code 表达业务错误。因此这里的业务 code=502 不一定是 HTTP 502；前端仍检查统一响应中的 code。部分工具返回原始异常字符串，后续还需整理日志与面向用户的错误信息。
+
+### 15.36 前端几乎不改：接口契约保留，历史仍在浏览器内存
+
+AIChat.vue 的欢迎语新增了“还能让我帮你预约实验室或设备”。handleSend 仍过滤 user/assistant、提交 `{messages: history}`，收到成功 ChatMessage 后追加到页面。api/ai.js 仍是 60000 毫秒超时，页面仍使用 marked 与 DOMPurify。
+
+MessagesState、工具调用 ID 和数据库会话都没有被要求放进前端 JSON。前端收到的是最终助手文本，不是图运行的全部消息，也没有单独展示每一步工具执行轨迹。
+
+每次 run_agent 重新 build_agent 并 compile；当前没有 checkpointer、thread_id 或服务端会话持久化。跨请求能继续对话依靠前端重传文本历史，刷新后恢复欢迎语，不能把 MessagesState 理解成已经保存了用户的长期记忆。
+
+欢迎语提到“怎么取消”可以解释为询问操作方法；当前工具列表并没有 cancel_reservation，不能据欢迎语推定助手能直接取消申请。
+
+<a id="agent-framework-comparison"></a>
+
+### 15.37 自定义方案与框架方案逐项对照
+
+| 关注点 | 旧自定义方案：仍保留 | 当前 LangChain / LangGraph 方案 | 迁移后仍需自己做 |
+| --- | --- | --- | --- |
+| 工具声明 | 手写 TOOLS JSON schema | @tool 从签名与 docstring 构造工具 | 设计有意义的参数、描述与业务约束 |
+| 模型调用 | OpenAI 客户端 + create | ChatOpenAI.bind_tools + invoke | 配置兼容服务，验证结构化调用 |
+| 消息表示 | role/content 字典 | Message 对象与 MessagesState | 过滤输入、管理历史范围 |
+| 参数解析 | json.loads 与字典判断 | 工具 schema 与 ToolNode 调用 | 日期、权限、资源与业务规则 |
+| 函数选择 | run_tool 的 if 分支 | ToolNode 中注册的工具对象 | 明确允许暴露哪些操作 |
+| 工具消息配对 | 手工保存调用 ID、追加 role=tool | ToolNode 返回匹配的 ToolMessage | 确认最终答案依据真实结果 |
+| 循环 | range(3) 控制模型调用次数 | 节点、条件边、recursion_limit | 结束策略、延迟预算与错误反馈 |
+| RAG 时机 | 每次先固定检索 | search_lab_docs 按模型工具请求执行 | 资料准确性、索引同步、必要时强制检索 |
+| 用户与会话 | 查询函数接收 db，未用 current_user 写入 | 闭包绑定请求 db/current_user | 跨请求隔离与会话生命周期 |
+| 能力范围 | 只读实验室/设备资料 | 加入知识检索、日期、创建预约工具 | 确认门禁、幂等、空闲查询与完整验收 |
+| 状态与记忆 | 单次请求内维护 messages | 单次图运行内合并消息 | 持久化、thread_id、跨请求恢复 |
+| 排错方式 | 直接跟踪 JSON、for 与分发函数 | 跟踪消息对象、节点、条件路由与工具结果 | 业务日志、可复现检查和真实联调 |
+
+自定义方案便于看见工具协议的每一步，少量工具时调用关系直接；增加分支和循环后，维护消息配对与执行流程的代码会增长。框架方案减少这类调度代码，扩展流程时可通过节点与边表达，但需要理解 reducer、状态、工具 schema 和框架异常。
+
+新增预约能力来自项目实际新增的工具及 current_user 传递，不是仅安装 LangGraph 就自动获得。两种实现都依赖原业务 service；比较时应把“执行方式改变”和“新增业务能力”分开看。
+
+### 15.38 从零复现这一版的顺序
+
+1. 保留旧 ai_service 与 ai_config，先读通原工具协议；核对迁移后的 config_global 路径。
+2. 安装当前 requirements.txt，配置三个 LLM 字段；单独准备 BGE 本地缓存与预热开关。
+3. 用既有查询 service 写只读 @tool，理解签名、默认值、描述和字符串返回。
+4. 添加 get_today、search_lab_docs，再包装原 create_reservation；保持用户身份来自登录依赖。
+5. 在 build_agent 中创建工具列表，给 ChatOpenAI 绑定同一份工具。
+6. 定义 MessagesState、agent_node、ToolNode 与条件边，compile 后再 invoke。
+7. 实现输入消息过滤、图预算、串行工具配置、最终文本归一化和错误分层。
+8. 将正在注册的 API 函数改为 run_agent，前端继续复用 ChatMessage 协议。
+9. 在专用学习环境按下一节检查真实工具与数据库结果；保留旧代码，比较相同只读问题在两条实现中的执行过程。
+
+不要在同一条 `/chat` 路径同时注册两个同方法处理函数来“保留两版”；当前源码采用保留旧函数注释、只注册新函数的方式。
+
+<a id="agent-current-validation"></a>
+
+### 15.39 当前核对范围与真实验收清单
+
+2026-10-25 本次更新核对实际 API、agent_service、两份配置、知识库、应用入口、依赖与前端，并检查新增快照、目录、锚点和旧教程保留情况。MessagesState 的合并、同步 ToolNode 的执行器配置也对照了本地安装包。没有调用真实模型、访问业务数据库、下载模型或重建 Chroma；第 15.18 节的 30 个断言属于旧自定义方案历史记录，不是新版框架已通过的测试数量。
+
+| 验收场景 | 应观察的证据 |
+| --- | --- |
+| 未登录、已登录及不同用户 | API 认证生效；创建记录的 user_id 来自当前登录用户 |
+| 问安全规则；模型缓存缺失 | 观察是否调用 search_lab_docs；错误能结束请求，不假称找到资料 |
+| 启用实验室、某实验室设备 | 结构化 tool_calls 与实际查询结果一致；核对无匹配和超过 10 条情况 |
+| 今天/明天/后天 | 观察 get_today 返回值及日期换算，核对服务器时区 |
+| 资料不全、未确认、确认后又修改时段 | 观察模型是否继续询问和重新复述；记录提示词确认能否被绕过，不将其算作强制门禁 |
+| 确认实验室或设备预约 | 工具成功后实际新增 status=0 记录；管理员审核前不称“已获准使用” |
+| 停用资源、维修设备、设备归属错误、时段冲突 | service 拒绝写入；工具返回失败，最终回答不假称成功 |
+| 工具缺参/错类型、非法日期、零时长 | 区分框架类型校验与尚待完善的业务规则，记录真实结果 |
+| 同轮多个工具 | 确认当前串行配置；前一工具失败时后续动作是否符合预期 |
+| 反复请求工具、模型服务失败、伪 XML 调用 | 流程能结束并给出错误，不把标签当正常答案 |
+| 写入后模型失败、60 秒超时、重复确认 | 先查实际预约记录，记录重复提交和结果追踪边界 |
+| 开/关预热、缓存不完整、刷新浏览器 | 启动路径与开关相符；失败记录日志；刷新会丢失前端历史 |
+
+### 15.40 对照复习：把框架中的每一步还原出来
+
+1. 旧方案哪个 if/for 分支，分别对应新的条件边与 tools 节点？
+2. 只写 ToolNode 没有 bind_tools，模型为什么可能不知道可用工具？
+3. agent_node 只返回一条消息，哪段合并规则让前面的历史仍存在？
+4. db/current_user 没出现在工具参数中，工具为什么仍能使用它们？
+5. 为什么 recursion_limit=10 不能解释成 10 次模型调用？
+6. 用户说“确认预约”后，哪些事实仍需要服务端校验？当前缺少什么强制确认机制？
+7. 预约 commit 成功后模型报错，为什么不能直接断言预约失败？
+8. 刷新页面后历史丢失，说明 MessagesState 与持久化会话有什么区别？
+9. 对同一句资源查询，分别画出旧 run_tool 和新 ToolNode 的输入、输出与结果 ID。
+
+### 15.41 当前框架代码快照（2026-10-25）
+
+以下直接保存本次读取的工作区文件，包括保留旧入口的注释；快照用于解释现状，不代表上面的待验收项均已完成。旧自定义完整快照仍在第 15.19 节，现有旧配置文件位于 data/config_global/ai_config.py；当前知识库与生命周期快照分别在第 14.20、6.8 节。
+
+<details>
+<summary><code>backend/app/api/ai.py</code>（2026-10-25）</summary>
+
+```python
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from app.common.response import Response
+from app.database import get_db
+from app.dependencies.auth import get_current_user
+from app.models.user import User
+from app.schemas.ai import ChatMessage, ChatRequest
+from app.services import ai_service
+from app.services import agent_service
+
+router = APIRouter(prefix="/ai", tags=["AI相关的api"])
+
+
+# @router.post("/chat")
+# def chat(
+#     data: ChatRequest,
+#     current_user: User = Depends(get_current_user),
+#     db: Session = Depends(get_db),
+# ):
+#     content = ai_service.chat(db=db, data=data)
+#     return Response.success(data=ChatMessage(role="assistant", content=content))
+
+
+@router.post("/chat")
+def chat(
+    data: ChatRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    content = agent_service.run_agent(db=db, current_user=current_user, data=data)
+    return Response.success(data=ChatMessage(role="assistant", content=content))
+```
+
+</details>
+
+<details>
+<summary><code>backend/data/config_global/agent_config.py</code>（2026-10-25）</summary>
+
+```python
+import json
+from datetime import datetime
+from sqlalchemy.orm import Session
+from langchain_core.tools import tool
+from app.common.exceptions import BusinessException
+from app.schemas.reservation import ReservationCreateRequest
+from app.models.user import User
+from app.services import equipment_service, kb_service, lab_service, reservation_service
+
+SYSTEM_PROMPT = """你是智能实验室预约系统的 Agent，回答要简洁。
+你可以：
+1. 使用 search_lab_docs 查询实验室的规则、安全、开放时间等问题
+2. 使用 list_open_labs / list_lab_equipments 查询真实的实验室和设备
+3. 在用户进行预约确认后，使用 create_lab_reservation 来进行真实的预约写库
+4. 使用 get_today 来进行日期的换算
+
+## 必须遵守
+工具必须通过接口提供的工具调用机制执行，不要把 <tool_call> 或 <function=...> 等标记作为回复内容。
+工具名和参数以实际提供的工具定义为准，不要编造不存在的 search_for 等工具。
+只有工具返回成功后，才能告诉用户预约已提交；工具返回错误时说明失败原因，不要声称成功。
+当用户提到了 今天、明天、后天 等日期相关的问题，请先调用 get_today 来获取日期，**不要直接返回"我需要确定明天的具体日期"**
+
+在提交预约之前必须向用户复述实验室ID与名称（或设备ID和名称）、日期、开始时间、结束时间。并得到用户确认再进行实际操作。
+用户没说【确认】【确认预约】【就这样预约】等确定性回复之前，不要调用 create_lab_reservation。
+工作流的确认环节里如果缺少了 lab_id，请先 list_open_labs 查到了 lab_id 再创建，不要瞎写。
+工作流的确认环节里如果缺少了 equipment_id，请先 list_lab_equipments 查到了 equipment_id 再创建，不要瞎写。
+
+预约成功后状态是待审核，必须管理员确认后实验室（或设备）才能使用。
+不要瞎编数据库里没有的实验室或者设备信息。
+如果是问开放时间或者实验室规则，优先调用 search_lab_docs，不要凭空回复。
+"""
+
+
+def build_tools(db: Session, current_user: User):
+
+    @tool
+    def search_lab_docs(query: str) -> str:
+        """根据用户的提问去检索知识库"""
+        try:
+            return kb_service.search(query) or "没有检索到相关的资料"
+        except Exception as exc:
+            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+
+    @tool
+    def list_open_labs(keywords: str = "") -> str:
+        """查询开放中的实验室"""
+        try:
+            keywords = keywords.strip() or None
+            page = lab_service.get_lab_page_list(
+                db, page=1, page_size=10, keywords=keywords, status=1
+            )
+            rows = [
+                {
+                    "id": item.id,
+                    "name": item.name,
+                    "location": item.location,
+                    "capacity": item.capacity,
+                    "open_time": item.open_time,
+                    "close_time": item.close_time,
+                }
+                for item in page.list
+            ]
+            return json.dumps({"total": page.total, "labs": rows}, ensure_ascii=False)
+        except Exception as exc:
+            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+
+    @tool
+    def list_lab_equipments(lab_id: int, keywords: str = "") -> str:
+        """查询隶属于实验室的设备"""
+        try:
+            keywords = keywords.strip() or None
+            page = equipment_service.get_equipment_page_list(
+                db, page=1, page_size=10, lab_id=int(lab_id), keywords=keywords
+            )
+            rows = [
+                {
+                    "id": item.id,
+                    "name": item.name,
+                    "lab_id": item.lab_id,
+                    "lab_name": item.lab_name,
+                    "spec": item.spec,
+                    "quantity": item.quantity,
+                    "status": item.status,
+                }
+                for item in page.list
+            ]
+            return json.dumps(
+                {"total": page.total, "equipments": rows}, ensure_ascii=False
+            )
+        except Exception as exc:
+            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+
+    @tool
+    def create_lab_reservation(
+        lab_id: int,
+        date: str,
+        start_time: str,
+        end_time: str,
+        equipment_id: int | None = None,
+        remark: str | None = None,
+    ) -> str:
+        """创建预约"""
+        try:
+            data = ReservationCreateRequest(
+                lab_id=lab_id,
+                equipment_id=equipment_id,
+                date=date,
+                start_time=start_time,
+                end_time=end_time,
+                remark=remark,
+            )
+            reservation_service.create_reservation(db, current_user, data)
+
+            return json.dumps(
+                {
+                    "ok": True,
+                    "message": "预约已提交，请等待管理员审核",
+                    "lab_id": lab_id,
+                    "equipment_id": equipment_id,
+                    "date": date,
+                    "start_time": data.start_time,
+                    "end_time": data.end_time,
+                },
+                ensure_ascii=False,
+            )
+        except BusinessException as exc:
+            return json.dumps({"ok": False, "error": exc.message}, ensure_ascii=False)
+        except Exception as exc:
+            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+
+    @tool
+    def get_today() -> str:
+        """获取服务器当前日期，格式为 YYYY-MM-DD"""
+        now = datetime.now()
+        return now.strftime("%Y-%m-%d")
+
+    return [
+        search_lab_docs,
+        list_open_labs,
+        list_lab_equipments,
+        create_lab_reservation,
+        get_today,
+    ]
+```
+
+</details>
+
+<details>
+<summary><code>backend/app/services/agent_service.py</code>（2026-10-25）</summary>
+
+```python
+import re
+
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
+from langgraph.graph import MessagesState, StateGraph, START
+from langgraph.prebuilt import ToolNode, tools_condition
+from sqlalchemy.orm import Session
+from app.common.exceptions import BusinessException
+from app.config import settings
+from app.models.user import User
+from app.schemas.ai import ChatRequest
+from data.config_global.agent_config import SYSTEM_PROMPT, build_tools
+
+
+def build_agent(db: Session, current_user: User):
+    tools = build_tools(db=db, current_user=current_user)
+    model = ChatOpenAI(
+        api_key=settings.LLM_API_KEY,
+        base_url=settings.LLM_BASE_URL,
+        model=settings.LLM_MODEL,
+        temperature=0,
+    ).bind_tools(tools)
+
+    def agent_node(state: MessagesState):
+        """LangGragh 执行的工作流的节点"""
+        response = model.invoke(state["messages"])
+        return {"messages": [response]}
+
+    gragh = StateGraph(MessagesState)
+    gragh.add_node("agent", agent_node)  # 调用大模型的节点
+    gragh.add_node("tools", ToolNode(tools))  # tool call的节点
+    gragh.add_edge(START, "agent")  # 流程的起点, call LLM
+    gragh.add_conditional_edges(
+        "agent", tools_condition
+    )  # 判断是否有 tool_call, 有就继续call, 没有就END 输出
+    gragh.add_edge("tools", "agent")  # agent查看tool调用的结果
+    return gragh.compile()
+
+
+def run_agent(db: Session, current_user: User, data: ChatRequest):
+    """大模型对话"""
+    if not data.messages:
+        raise BusinessException(message="对话内容为空")
+
+    history = []
+    for message in data.messages:
+        if message.role == "user" and message.content.strip():
+            history.append(HumanMessage(content=message.content.strip()))
+        elif message.role == "assistant" and message.content.strip():
+            history.append(AIMessage(content=message.content.strip()))
+
+    if not history:
+        raise BusinessException(message="请输入您要对话的内容")
+
+    agent = build_agent(db, current_user)
+    try:
+        result = agent.invoke(
+            {"messages": [SystemMessage(content=SYSTEM_PROMPT), *history]},
+            # Tools share this request's SQLAlchemy session; execute them sequentially.
+            config={"recursion_limit": 10, "max_concurrency": 1},
+        )  # 设置对话循环的上限是10轮
+    except BusinessException:
+        raise
+    except Exception:
+        raise BusinessException(message="大模型调用失败，请稍后重试")
+
+    messages = result.get("messages") or []
+    if not messages:
+        raise BusinessException(message="大模型没有任何返回内容")
+
+    message = messages[-1]
+    if not isinstance(message, AIMessage) or message.tool_calls:
+        raise BusinessException(message="大模型没有返回有效的回复内容")
+
+    if message.invalid_tool_calls:
+        raise BusinessException(message="助手未能正确调用工具，请重试", code=502)
+
+    content = message.content
+
+    # 处理字符串类型的回复
+    if isinstance(content, str):
+        content = content.strip()
+
+    # 处理列表类型的回复
+    elif isinstance(content, list):
+        content = "".join(
+            (
+                part
+                if isinstance(part, str)
+                else part.get("text", "") if isinstance(part, dict) else ""
+            )
+            for part in content
+        ).strip()
+
+    else:
+        content = ""
+
+    if re.search(r"<\s*/?\s*(?:tool_call|function)\b", content, re.IGNORECASE):
+        raise BusinessException(message="助手未能正确调用工具，请重试", code=502)
+
+    if content:
+        return content
+
+    raise BusinessException(message="大模型没有返回有效的回复内容")
+```
+
+</details>
+
+<details>
+<summary><code>frontend/src/views/AIChat.vue</code>（2026-10-25）</summary>
+
+```vue
+<template>
+  <div>
+    <el-card>
+      <template #header>
+        <div style="font-size: 16px; font-weight: bold">
+          <span>AI智能助手</span>
+        </div>
+      </template>
+      <div
+        ref="listRef"
+        style="
+          height: 480px;
+          overflow-y: auto;
+          padding: 8px 4px;
+          background-color: #fafafa;
+          border-radius: 6px;
+        "
+      >
+        <div
+          v-for="(item, index) in messages"
+          :key="index"
+          :style="{
+            display: 'flex',
+            justifyContent: item.role === 'user' ? 'flex-end' : 'flex-start',
+            marginBottom: '12px'
+          }"
+        >
+          <div
+            :style="{
+              maxWidth: '70%',
+              padding: '10px 12px',
+              borderRadius: '8px',
+              backgroundColor: item.role === 'user' ? '#409eff' : '#fff',
+              color: item.role === 'user' ? '#fff' : '#333',
+              lineHeight: '1.6',
+              boxShadow: '0 1px 2px rgba(0 ,0, 0, 0.06)'
+            }"
+            v-html="parseMarkdown(item.content)"
+          ></div>
+        </div>
+      </div>
+      <!-- 输入框 -->
+      <div style="margin-top: 12px; display: flex; gap: 8px; align-items: flex-end">
+        <el-input
+          v-model="input"
+          type="textarea"
+          :rows="2"
+          placeholder="问问实验室怎么预约、开放时间..."
+          @keydown.enter.exact.prevent="handleSend"
+          @keydown.enter.shift.stop
+        ></el-input>
+        <el-button type="primary" :loading="loading" @click="handleSend">发送</el-button>
+      </div>
+    </el-card>
+  </div>
+</template>
+
+<script setup>
+import { ref, nextTick } from 'vue'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify' // 过滤危险的 HTML，防止 XSS 攻击
+import { chatApi } from '@/api/ai'
+
+// 将 markdown 字符串转换为安全的 HTML 字符串
+const parseMarkdown = (text) => {
+  if (!text) return ''
+  // 使用 marked 解析，然后用 DOMPurify 清理
+  const rawHtml = marked.parse(text)
+  return DOMPurify.sanitize(rawHtml)
+}
+
+const messages = ref([
+  {
+    role: 'assistant',
+    content:
+      '你好, 我是实验室助手。你可以向我提问怎么预约、取消实验室或者设备, 也可以问我现在系统所存在的实验室与设备的具体信息, 还能让我帮你预约实验室或设备。'
+  }
+])
+
+const input = ref('')
+const loading = ref(false)
+const listRef = ref()
+
+const scrollToBottom = () => {
+  nextTick(() => {
+    const elem = listRef.value
+    if (elem) elem.scrollTop = elem.scrollHeight
+  })
+}
+
+const handleSend = async () => {
+  const text = input.value.trim()
+  if (!text || loading.value) return
+  messages.value.push({ role: 'user', content: text })
+  input.value = ''
+  loading.value = true
+  scrollToBottom()
+  try {
+    const history = messages.value.filter(
+      (item) => item.role === 'user' || item.role === 'assistant'
+    )
+    const res = await chatApi({ messages: history })
+    if (res.code === 200) {
+      messages.value.push(res.data)
+      scrollToBottom()
+    }
+  } catch {
+    // 请求失败时由请求拦截器提示错误。
+  } finally {
+    loading.value = false
+  }
+}
+</script>
+```
+
+</details>
+
+<a id="agent-sse"></a>
+
+### 15.42 SSE 版本的文件地图与实际入口（2026-10-26）
+
+本节起讲解当前流式版本。第 15.1～15.19 节保留自定义工具循环，第 15.20～15.41 节保留 LangChain/LangGraph 一次性 JSON 版本，便于比较从协议、框架到输出方式的演进。
+
+| 文件 | 当前变化 | 与下一层的连接 |
+| --- | --- | --- |
+| backend/app/api/ai.py | 注册 POST /chat/stream，返回 StreamingResponse | 调用 stream_agent，将字典编码为 SSE 帧 |
+| backend/app/services/agent_service.py | streaming=True、异步模型节点、astream_events、三个辅助函数 | 将框架事件变成六种页面事件 |
+| backend/data/config_global/agent_config.py | 增加 TOOL_LABELS | 把工具名转换为中文状态文案；五个业务工具仍复用原服务 |
+| frontend/src/api/ai.js | chatStreamApi 使用 fetch 读响应流 | 解码字节、缓存半帧、解析 JSON，再调用 onEvent |
+| frontend/src/views/AIChat.vue | 提前创建响应式助手消息，显示状态、步骤与增量正文 | 按 evt.type 更新同一个消息对象 |
+| frontend/tests/ai.test.js | 使用真实 API 模块和模拟 ReadableStream | 验证分块解析、鉴权、错误传递与释放 reader 锁 |
+| backend/app/services/reservation_service.py | 扫描改用 asyncio.to_thread，并处理取消 | 与聊天共用事件循环时不再直接同步执行扫描，详见第 13.29 节 |
+
+总路由 `/api`、AI 前缀 `/ai` 与接口 `/chat/stream` 拼成 `/api/ai/chat/stream`。旧 `/chat` 的两个处理函数均已注释，旧 run_agent 也已注释；保留注释不等于旧 URL 仍提供服务。旧自定义 ai_service 与配置文件继续保留，当前聊天由 stream_agent 执行。
+
+### 15.43 一次流式提问怎样经过前后端
+
+```mermaid
+sequenceDiagram
+    actor U as 用户
+    participant V as AIChat.vue
+    participant F as chatStreamApi / fetch
+    participant A as chat_stream / StreamingResponse
+    participant G as stream_agent / LangGraph
+    U->>V: 输入问题并发送
+    V->>V: 加入用户消息和 reactive 空助手消息
+    V->>F: 历史 + onEvent 回调
+    F->>A: POST /api/ai/chat/stream，JSON 与 Bearer token
+    A->>G: async for 读取事件
+    G-->>A: status：正在思考
+    A-->>F: data: JSON + 空行
+    F-->>V: onEvent(status)
+    loop 图执行中的模型和工具事件
+        G-->>A: tool_start / tool_end / token
+        A-->>F: 持续发送 SSE 帧
+        F->>F: UTF-8 解码 → 按空行分帧 → JSON.parse
+        F-->>V: onEvent(evt)
+        V->>V: 更新 status/steps/content，nextTick 后滚动
+    end
+    G-->>A: done，或异常时 error
+    A-->>F: 结束响应流
+    F-->>V: 读取函数完成或抛错
+    V->>V: finally 复原 loading 和状态
+```
+
+这是一次 HTTP 请求内的多次服务器推送，不是每个 token 都发一个新请求，也不是 WebSocket 双向连接。用户再次输入确认时仍发起下一次 POST；当前页面在 loading 时会阻止再次发送。
+
+### 15.44 SSE 帧格式与项目的六种事件
+
+后端每次发送的格式是：
+
+```python
+yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+```
+
+外层是 SSE 文本，`data:` 后才是 JSON；两个换行标记帧结束。ensure_ascii=False 让中文保留为可读字符，但网络上传输的仍是 UTF-8 字节。[SSE 格式说明](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events)
+
+```text
+data: {"type":"status","message":"正在思考..."}
+
+data: {"type":"tool_start","name":"list_open_labs","label":"查询开放的实验室"}
+
+data: {"type":"token","content":"找到以下实验室"}
+
+data: {"type":"done"}
+
+```
+
+| JSON 的 type | 携带字段 | 当前意义 |
+| --- | --- | --- |
+| status | message | 图运行前的状态提示 |
+| tool_start | name、label | 某个工具开始执行 |
+| tool_end | name、label、preview | 工具返回；preview 是截断后的输出文本 |
+| token | content | 模型正文增量，可能为空或包含多个字符 |
+| done | 无正文 | 框架事件迭代正常结束 |
+| error | message | 业务异常或通用执行失败提示 |
+
+本项目没有发送 SSE 的 `event:` 字段；这里的 type 是 JSON 内部字段，由自定义回调分发。`{"type":"done"}` 是实际完成事件；前端也兼容忽略 `data: [DONE]`，但后端目前不发送这个标记。
+
+### 15.45 async def、yield、async for 与 StreamingResponse
+
+普通 async 函数使用 await 等待结果；async 函数里出现 yield 后，它成为异步生成器，调用时得到可以逐步迭代的对象。stream_agent 每 yield 一次，外层 event_generate 就收到一个事件字典。
+
+event_generate 再把字典编码成字符串，并交给 StreamingResponse。返回 StreamingResponse 对象不意味着此时图已经执行完，正文会在后续响应发送过程中逐段产生。
+
+| 设置 | 作用与边界 |
+| --- | --- |
+| media_type="text/event-stream" | 声明正文是 SSE 流，不是一次性 Response.success JSON |
+| Cache-Control: no-cache | 要求缓存重验证；不能单独保证代理立即转发每个片段 |
+| Connection: keep-alive | 当前代码显式设置的连接头，不是应用级心跳 |
+| X-Accel-Buffering: no | 向支持该头的 Nginx 请求关闭响应缓冲；实际代理配置仍需验证 |
+
+应用 yield 不保证用户立刻看到一个字；模型输出、服务端发送、代理、网络和浏览器处理都会影响到达节奏。后端帧数、网络数据块数与页面更新次数并不需要一一对应。
+
+### 15.46 streaming=True 与 ainvoke 为什么能一起使用
+
+build_agent 的图结构仍是 START → agent → 条件边 → tools → agent。变化在模型与节点：ChatOpenAI 开启 streaming=True，agent_node 改成 async def，并使用 `await model.ainvoke(state["messages"])`。
+
+节点仍等待本轮完整 AIMessage，再返回 `{"messages": [response]}` 更新图状态；外层 astream_events 同时能观察模型运行中产生的流式事件。这解释了“节点返回完整消息”与“页面提前收到增量文本”为什么可以同时成立。
+
+```python
+async for event in agent.astream_events(
+    inputs, version="v2", config={"recursion_limit": 10}
+):
+    kind = event.get("event")
+```
+
+这里读取的是 Runnable 事件流；version="v2" 表示这套事件的格式，不是 SSE 版本，也不是对话轮数。不要与 graph.astream 的 stream_mode 或其他接口中的同名 version 参数混为一谈。本地 langchain_core 的 astream_events 文档列出了 event、name、data、metadata 等字段；项目只向浏览器转发需要的部分。[LangGraph 流式机制](https://docs.langchain.com/oss/python/langgraph/streaming)
+
+源码中 `await model.astream(...)` 是注释，不是当前运行路径。astream 通常通过 async for 消费输出，不能只把方法名替换后就当成与 ainvoke 相同的返回值使用。
+
+### 15.47 三个辅助函数与工具过程展示
+
+`_build_history()` 把非空 user/assistant 内容去掉首尾空白，转成 HumanMessage/AIMessage；过滤后为空则抛业务异常。系统提示词由服务端加入，前端步骤文案不作为系统指令。
+
+`_tool_output_preview(output, limit=200)` 先取 ToolMessage.content；不是字符串时用 str 转换，再截取最多 200 个字符并加省略号。这个限制按字符串字符计，不按字节或模型 token 计；它是显示预览，不是 JSON 解析或业务成功判断。
+
+TOOL_LABELS 将五个工具映射到中文名称；事件中同时保留机器名称 name 和展示 label。未找到映射时回退到工具名。
+
+| 框架事件 | 项目事件 | 内容来源 |
+| --- | --- | --- |
+| on_tool_start | tool_start | event.name → name 与 TOOL_LABELS |
+| on_tool_end | tool_end | 同一工具名称，加 event.data.output 的预览 |
+| on_chat_model_stream | token | event.data.chunk 经 _chunk_text 提取正文 |
+
+工具内部可以返回 `{"ok":false,"error":"..."}` 而不抛异常，此时仍可能收到 tool_end。页面显示“创建预约单完成”只表示工具函数返回，不能等同于数据库写入成功；需要结合工具结果与实际预约记录判断。
+
+当前自定义事件没有暴露 run_id 或 tool_call_id，同名工具重复调用时只展示顺序步骤。若以后做可折叠的精确调用配对，需要增加稳定的调用标识。
+
+### 15.48 _chunk_text：正文增量不是每次恰好一个字
+
+_chunk_text 对 None 返回空字符串；通过 getattr 取得 content。字符串直接返回；列表则把字符串项和字典中的 text 拼接；其他非空类型转成字符串。
+
+当前 metadata 过滤允许 `langgraph_node` 为 agent 或 None 的模型事件，其余节点跳过。它没有区分图循环中“工具调用前的模型说明”和“最后一轮答案”，同一请求的多个模型轮次正文都可能被追加进同一个气泡。
+
+token 是本项目事件名，content 可能是半句、多个字、空格、换行或空字符串，不是计费 token 的计数。正文追加时不能对每个片段单独 trim，否则会破坏单词间空格、Markdown 换行或代码缩进。
+
+当前即使 _chunk_text 返回空串也会 yield token；前端仍会清掉 status。列表提取假设 text 是字符串，没有完整多模态类型校验。该实现只展示正文和工具过程，不展示模型私有推理内容。
+
+### 15.49 错误发生在响应之前还是流里面
+
+| 阶段 | 当前表现 | 前端处理 |
+| --- | --- | --- |
+| 请求体校验或认证失败 | FastAPI 在进入响应流前返回 HTTP/JSON 错误 | chatStreamApi 检查 401、res.ok 和响应类型 |
+| stream_agent 输入、建图或运行抛业务异常 | yield type=error，message 为业务文案 | 页面显示错误提示；没有正文时把文案放进气泡 |
+| stream_agent 中其他 Exception | yield 通用 error | 提示“大模型调用失败，请稍后重试” |
+| 传输中断、JSON 解析失败、回调抛错 | fetch/reader/解析函数的 Promise 拒绝 | handleSend 的 catch 与 finally 收尾 |
+
+流开始发送之后，错误不能靠重新返回一份 Response.success/Response.error 来替换已经发出的正文。本实现把错误放进事件通道；因此 HTTP 200 也可能包含 error 事件。
+
+正常循环结束会发 done；异常分支发 error 后生成器结束，不再补发 done。没有请求级“异常发生就撤销所有工具”的机制，预约如果已经 commit，后续出错仍可能留下记录。
+
+### 15.50 为什么用 POST fetch，而不是原来的 Axios
+
+chatStreamApi 向 `/api/ai/chat/stream` 发 POST，body 仍为 JSON.stringify(data)，请求头显式设置 application/json、text/event-stream 和 Bearer token。baseUrl 来自 VITE_API_BASE_URL，并去掉末尾一个斜杠；为空时继续使用同源开发代理。
+
+原生 EventSource 接口不提供这里需要的 POST body 和任意 Authorization 头配置，因此项目选择 fetch 读取响应流。SSE 是正文格式，不要求前端一定使用 EventSource；本实现也不会自动获得 EventSource 的重连能力。
+
+fetch 不经过 utils/request.js 的 Axios 拦截器。当前 401 只抛“登录已失效”错误，页面负责提示，没有自动清理登录、跳转或复用旧请求会话版本检查。原 chatApi 的 timeout:60000 已注释，新请求没有设置超时或 AbortController，不能继续说“当前聊天 60 秒自动超时”。
+
+收到响应头后依次检查：401 → HTTP 是否成功且存在 body → content-type 是否包含 text/event-stream。普通 fetch 遇到 HTTP 4xx/5xx 不会仅因此自动拒绝 Promise，代码必须检查状态。其他 HTTP 错误目前多为通用文案，没有统一读取 JSON 错误详情。
+
+### 15.51 getReader、TextDecoder 和 buffer 各解决什么问题
+
+```text
+reader.read()：取得任意大小的字节块
+  → TextDecoder(stream:true)：保留可能跨块的 UTF-8 字节
+  → buffer：保留可能跨块的 SSE 文本帧
+  → split(空行)：取出完整帧
+  → dispatchEvent：从 data: 解析 JSON
+  → onEvent：更新页面
+```
+
+一个汉字的 UTF-8 字节可能分在两次 read 中；一条 JSON 也可能分在多个网络块中。TextDecoder 的流模式处理前一种边界，buffer 处理后一种边界，二者不能互相替代。
+
+每次读取后立即把解码结果加入 buffer，再按 `/\r?\n\r?\n/` 分割。`chunks.pop()` 取走最后尚未结束的残片，其余完整帧立即分发。即使连接还没关闭，页面也能看到已经到达的完整事件；不能把分发循环放到整个 while 结束之后。
+
+读取完成时调用无参数 decoder.decode() 冲刷残余字节，再处理剩余文本。[TextDecoder 的 stream 选项](https://developer.mozilla.org/en-US/docs/Web/API/TextDecoder/decode)
+
+### 15.52 dispatchEvent、最后半帧与 releaseLock
+
+dispatchEvent 按行拆一帧，只保留 data: 行；每行去掉前缀和前导空白，多行 data 用换行连接。随后跳过空数据与 [DONE]，JSON.parse 后调用 onEvent。
+
+若 JSON 本身不合法，抛“流式回复格式错误，请重试”；onEvent 放在 JSON 的 try/catch 之外，回调自己的异常会原样向 handleSend 传播，不会误报成 JSON 错误。
+
+EOF 时非空 buffer 也会尝试解析，这是本客户端对缺少末尾空行的容错行为。它不是“服务器以后可以省略分隔符”的约定，也不能把截断的半个 JSON 修复成完整数据。解析器面向当前后端格式，支持 LF/CRLF 和多行 data，未实现完整的 id/retry/事件名/重连协议。
+
+finally 中 reader.releaseLock() 释放读取器占用，让流不再被这个 reader 锁住；它不等于 reader.cancel()，也不等于取消 HTTP 或停止后端预约。当前没有限制 buffer 大小；未出现 done 就正常 EOF 也会被接受，异常截断检测仍需补齐。
+
+### 15.53 reactive 助手消息：为什么创建后持续修改同一个对象
+
+页面先放入用户消息，再创建：
+
+```js
+const assistant = reactive({
+  role: 'assistant',
+  content: '',
+  status: '正在思考...',
+  steps: []
+})
+messages.value.push(assistant)
+```
+
+回调一直修改这个 assistant 代理。若把普通对象 push 进响应式数组，却仍通过原来的普通对象引用改字段，修改可能绕过代理，造成正文到达但页面没有及时更新。使用 reactive 保证这里持有的引用就是响应式代理；通过数组中的代理访问也能追踪变化，不能把问题泛化成“数组里放对象都无效”。
+
+token 到达后使用 `assistant.content += evt.content || ''`。追加而非覆盖，才能保留先前片段；done 只清理状态，不能再追加一份完整答案，否则会显示重复正文。
+
+### 15.54 页面状态与下一轮 history 为什么要拆开
+
+页面消息有 role/content/status/steps 四类字段；后端请求仍只需要 role/content。
+
+```js
+const history = messages.value
+  .filter((item) => item.role === 'user' || item.role === 'assistant')
+  .slice(0, -1)
+  .map(({ role, content }) => ({ role, content }))
+```
+
+slice(0,-1) 排除刚刚插入的空助手；map 解构并重建对象，去掉状态和步骤。这里依赖“当前空助手恰好位于最后”的插入顺序。若以后插入系统提示行或并发发送，要同步调整选择规则。
+
+status 表示此刻在做什么，steps 留下本次工具过程，content 保存要继续参与对话的正文。步骤不会单独回传，但已经输出的模型说明、半截正文或作为 content 写入的错误文案可能在下一次作为 assistant 历史重传；当前没有单独的失败消息过滤标记。
+
+### 15.55 六种事件怎样更新 UI，loading 何时结束
+
+| 收到事件 | 页面更新 |
+| --- | --- |
+| status | 替换 assistant.status |
+| tool_start | 状态改为“正在…”；steps 追加“开始” |
+| tool_end | 状态改为“…完成”；追加完成和 preview |
+| token | content 追加增量；清空当前状态 |
+| done | 清空状态，不再追加正文 |
+| error | 清空状态、ElMessage.error；无正文时填入错误文案 |
+
+状态和步骤通过插值显示，正文仍走 marked → DOMPurify → v-html。每个事件后都请求滚动，nextTick 让滚动发生在 DOM 更新后。流式 Markdown 可能暂时只有半个列表或代码围栏，继续收到正文后重新解析即可；当前没有节流，长文本高频更新的开销仍需观察。
+
+loading 在 chatStreamApi 读取结束或失败后的 finally 中复原，不是收到 done 就立刻结束网络读取。error 回调也没有主动 throw 或 cancel，正常情况下由后端随后结束流。已有部分正文遇错时会保留，错误通过提示框展示，避免把已收到的内容直接覆盖。
+
+### 15.56 流式版本没有自动继承旧版的保护
+
+| 项目 | 2026-10-25 JSON 版本 | 当前 SSE 版本 |
+| --- | --- | --- |
+| 返回结果 | 检查最后一条 AIMessage 后返回文本 | 逐事件转发正文，迭代结束发送 done |
+| invalid_tool_calls、伪 XML 检查 | run_agent 中显式检查 | 检查代码位于已注释的 run_agent，stream_agent 未复用 |
+| 空答案检查 | 最终正文为空则报错 | 没有统计是否收到非空正文，可能只结束而没有答案 |
+| 工具并发设置 | invoke 配置 max_concurrency=1 | astream_events 仅传 recursion_limit=10 |
+| 前端请求超时 | Axios 60000 毫秒 | 当前 fetch 未配置应用级超时 |
+| 取消与重连 | 无专门协议 | 仍未实现停止按钮、心跳、事件 ID 或自动重连 |
+
+当前异步 ToolNode 在安装包中用 asyncio.gather 收集同批工具调用，同批多个工具可能并发访问闭包中的同一 Session。不能继续沿用第 15.33 节“本请求工具串行”的结论，也不能仅凭改成 async 就认为同步 SQLAlchemy Session 安全；这属于待核对与修补项，本文未改变业务源码。
+
+done 说明事件迭代走到正常结束，不证明模型回答有效，也不证明任何预约已成功。逐段展示后，最终发现错误不能把用户已经看到的内容当作从未出现；后续可增加输出阶段标识、最终结果校验和失败标记。
+
+<a id="sse-session-lifecycle"></a>
+
+### 15.57 FastAPI 版本与流式数据库会话的生命周期
+
+项目 requirements.txt 固定 FastAPI 0.115.13，get_db 使用 yield/finally close。本地 routing.py 显示依赖退出栈在返回 Response 对象之前退出；官方文档也说明 0.118.0 之前相关版本在发送 StreamingResponse 前执行 yield 依赖清理，0.118.0 才恢复到响应发送后清理。[FastAPI 流响应与 yield 依赖](https://fastapi.tiangolo.com/advanced/advanced-dependencies/#dependencies-with-yield-and-streamingresponse-technical-details)
+
+当前 event_generate 把依赖提供的 db 交给后续流式工具；不能直接套用“直到流结束才 close”的教程结论。SQLAlchemy Session 默认 close 后可能重置并再次使用，不一定马上报“对象已关闭”，但后续重新取连接时的释放、用户 ORM 对象状态和错误收尾仍需验证。
+
+这与同批工具共享 Session 的并发问题是两个层面：一是生命周期，二是同一时刻由谁使用。后续方案可考虑由生成器明确创建/关闭流内会话，或核对版本升级后的依赖清理行为；无论采用哪种，都需要同时验证认证用户上下文、断连清理和事务失败。本次只记录现状与待办，没有升级 FastAPI 或连接真实数据库。
+
+### 15.58 DeepSeek 兼容配置与“正在思考”的含义
+
+build_agent 使用 urlparse 解析 LLM_BASE_URL，仅当 hostname 等于 `api.deepseek.com` 时，传入：
+
+```python
+extra_body={"thinking": {"type": "disabled"}}
+```
+
+其他主机的 extra_body 为 None。这个判断看实际 URL 的主机名，不根据模型名称猜测提供方，也不会自动覆盖兼容代理域名。
+
+源码注释说明当前对话只保留正文；DeepSeek 的思考模式配合工具调用涉及 reasoning_content 的回传约定，因此该官方端点分支选择禁用思考模式。[DeepSeek 思考模式与工具调用说明](https://api-docs.deepseek.com/guides/thinking_mode/)
+
+页面“正在思考...”来自本地 status 事件，工具步骤来自应用执行事件；这些是进度提示，不是模型内部思维链。开启 SSE 也不代表已经支持 reasoning_content 的展示、存储或回传。
+
+### 15.59 三个阶段放在一起比较
+
+| 对照点 | 自定义工具循环 | 框架 JSON 版本 | 当前框架 SSE 版本 |
+| --- | --- | --- | --- |
+| 历史入口 | ai_service.chat | run_agent | stream_agent |
+| 执行方式 | 手写 range/消息配对 | StateGraph.invoke | astream_events + 异步节点 |
+| HTTP 结果 | 一次性 Response JSON | 一次性 Response JSON | POST 流响应，data: JSON 事件 |
+| 前端入口 | chatApi/Axios | chatApi/Axios | chatStreamApi/fetch/reader |
+| 页面更新 | 完整答案后新增助手消息 | 完整答案后新增助手消息 | 先放 reactive 助手，再更新状态、步骤和正文 |
+| 学习重点 | 工具协议细节 | 消息状态与图调度 | 异步生成器、流事件、网络分块与 UI 增量 |
+
+SSE 主要改变结果传递和界面反馈，五个工具仍调用原业务服务。它没有自动补齐后端强制确认、幂等、取消/审核工具或空闲时段计算。与本次一起修改的预约扫描线程化放在第 13.29 节，便于从对应业务文件继续学习。
+
+### 15.60 从零复现 SSE 版本的顺序
+
+1. 先读懂第 15.20～15.41 节的消息图，保留旧方案与阶段快照。
+2. 约定六种事件和各字段，区分正文、过程、结束及错误。
+3. 抽取历史转换、片段提取和预览函数，添加 TOOL_LABELS。
+4. 模型开启流式输出，节点改为 ainvoke；用 astream_events 映射框架事件。
+5. 注册 /chat/stream，逐事件 JSON 编码并追加 SSE 空行。
+6. 前端实现 POST fetch、认证头、状态检查、UTF-8 解码与半帧缓存。
+7. 页面创建 reactive 助手，用回调更新同一对象；重传历史只带 role/content。
+8. 运行现有解析测试，验证“连接未关闭就可收到事件”。
+9. 在真实浏览器、代理和模型环境检查分段显示，再验收数据库生命周期、工具并发与失败收尾。
+
+不要把“后端 yield 正常”“解析单测通过”“浏览器真正逐段显示”“预约正确写库”合并成同一个验证结论。
+
+<a id="sse-validation"></a>
+
+### 15.61 本次检查记录与真实 SSE 验收
+
+2026-10-26 在 frontend 目录实际执行现有测试：
+
+```powershell
+node --test tests/ai.test.js
+```
+
+结果为 **7 项通过、0 失败**。测试通过 Vite SSR 加载实际 chatStreamApi，模拟 fetch、localStorage 与 ReadableStream；检查覆盖：
+
+1. 流未关闭前就分发事件，并发送正确 URL、token 与历史。
+2. 按字节拆分中文与 CRLF 帧时保持内容正确，忽略注释和兼容 [DONE]。
+3. EOF 前最后一帧没有末尾空行时仍能分发。
+4. 401 的登录失效提示。
+5. 非 SSE 响应类型被拒绝。
+6. 非法 JSON 报错且释放 reader 锁。
+7. onEvent 回调异常原样传播。
+
+这些用例不挂载 AIChat.vue，不连接真实后端、模型、MySQL 或代理；不能据此认定 Vue 打字机效果、工具并发、会话清理与真实预约流程已验收。frontend/tests 现在存在 ai.test.js，但它不是恢复了早期 6 项登录测试；旧自定义方案的 30 个断言也不是本次流式测试数量。
+
+| 真实验收场景 | 要观察的结果 |
+| --- | --- |
+| 普通问答与长回答 | 连接未关闭前持续出现内容；空格、换行和代码块不丢失 |
+| 知识/资源/日期工具 | 状态和过程先后合理，tool_end 的失败 JSON 不被误称成功 |
+| 预约创建成功与冲突 | 查实际待审核记录；错误提示与数据库结果一致 |
+| 多工具、同名工具连续调用 | 核对并发与步骤归属，检查共享 Session 的行为 |
+| 空历史、无有效文本、伪工具标签 | 核对 error/done 与缺失的最终校验，不把空结束视为有效回答 |
+| 断网、关页面、服务端异常 | 部分正文保留、loading 收尾、连接和数据库资源释放 |
+| 未收到 done 就 EOF、长时间无数据 | 记录当前缺少终止校验、超时和心跳的行为 |
+| 写入后断流、重复确认 | 先核对“我的预约”，避免将输出失败误判为未写库 |
+| Vite、直连与 Nginx 部署 | Authorization、代理转发、无明显缓冲和真实首片延迟 |
+| 后台扫描同时运行、重载退出 | to_thread 不阻塞主事件循环；取消后线程内任务收尾另行检查 |
+
+### 15.62 SSE 复习练习
+
+1. 分别解释模型 token 片段、SSE 帧、网络字节块和 Vue 更新为什么不是同一个单位。
+2. 为什么 TextDecoder 已经设置 stream:true，仍然需要字符串 buffer？
+3. 如果只有 releaseLock，没有 cancel/AbortController，会停止哪些操作、不会停止哪些操作？
+4. 工具返回 ok=false 时，为什么仍可能出现 tool_end 和“完成”状态？
+5. 为什么 done 不应该再携带一份正文直接追加？当前怎样识别没有 done 的中断？
+6. 对照旧版，列出流式版本未继承的最终输出校验与并发设置。
+7. 为什么 FastAPI 的具体版本会影响流中的数据库 Session？
+8. 错误发生在已经收到一半正文之后，页面、历史和数据库各自可能留下什么？
+
+### 15.63 当前 SSE 代码快照（2026-10-26）
+
+以下保存当前 API、Agent、工具标签、前端解析、页面和已有测试，规范化行尾空白。保留源码中的旧代码注释，便于比较迁移过程；第 15.19 与 15.41 节的历史快照继续保留。预约扫描的当前片段在第 13.29 节。
+
+<details>
+<summary><code>backend/app/api/ai.py</code>（2026-10-26）</summary>
+
+```python
+import json
+from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session
+from app.common.response import Response
+from app.database import get_db
+from app.dependencies.auth import get_current_user
+from app.models.user import User
+from app.schemas.ai import ChatMessage, ChatRequest
+from app.services import ai_service
+from app.services import agent_service
+
+router = APIRouter(prefix="/ai", tags=["AI相关的api"])
+
+
+# @router.post("/chat")
+# def chat(
+#     data: ChatRequest,
+#     current_user: User = Depends(get_current_user),
+#     db: Session = Depends(get_db),
+# ):
+#     content = ai_service.chat(db=db, data=data)
+#     return Response.success(data=ChatMessage(role="assistant", content=content))
+
+
+# @router.post("/chat")
+# def chat_agent(
+#     data: ChatRequest,
+#     current_user: User = Depends(get_current_user),
+#     db: Session = Depends(get_db),
+# ):
+#     content = agent_service.run_agent(db=db, current_user=current_user, data=data)
+#     return Response.success(data=ChatMessage(role="assistant", content=content))
+
+
+@router.post("/chat/stream")
+async def chat_stream(
+    data: ChatRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    async def event_generate():
+        async for event in agent_service.stream_agent(
+            db=db, current_user=current_user, data=data
+        ):
+            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_generate(),
+        media_type="text/event-stream",  # 告诉浏览器这是 SSE 流
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Nginx 避免缓存吐出
+        },
+    )
+```
+
+</details>
+
+<details>
+<summary><code>backend/app/services/agent_service.py</code>（2026-10-26）</summary>
+
+```python
+import re
+from typing import Any
+from urllib.parse import urlparse
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage, AIMessage, HumanMessage, ToolMessage
+from langgraph.graph import MessagesState, StateGraph, START
+from langgraph.prebuilt import ToolNode, tools_condition
+from sqlalchemy.orm import Session
+from app.common.exceptions import BusinessException
+from app.config import settings
+from app.models.user import User
+from app.schemas.ai import ChatRequest
+from data.config_global.agent_config import build_tools, SYSTEM_PROMPT, TOOL_LABELS
+
+
+def _build_history(data: ChatRequest) -> list:
+    """将前端的消息转成 LangChain 的消息对象"""
+    history = []
+    for message in data.messages:
+        if message.role == "user" and message.content.strip():
+            history.append(HumanMessage(content=message.content.strip()))
+        elif message.role == "assistant" and message.content.strip():
+            history.append(AIMessage(content=message.content.strip()))
+    if not history:
+        raise BusinessException(message="请输入您的对话内容")
+    return history
+
+
+def _tool_output_preview(output: Any, limit: int = 200):
+    """把工具输出的结果收成短文本预览, 避免整段的JSON污染了输出的区域"""
+    if isinstance(output, ToolMessage):
+        output = output.content
+
+    text = (
+        output if isinstance(output, str) else str(output)
+    )  # output 有可能是 dict -> str
+
+    return text if len(text) <= limit else text[:limit] + "..."
+
+
+def _chunk_text(chunk: Any):
+    """
+    从模型的流式输出里面 拿到纯文本
+    chunk.content 可能是 str [{type, text}, ....] 等类型 这个需要统一处理成字符串
+    """
+    if chunk is None:
+        return ""
+
+    # chunk 如果是 AiMessage 类型的 则可以取出 content
+    content = getattr(chunk, "content", None)
+
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, list):
+        parts = []
+        for part in content:
+            if isinstance(part, str):
+                parts.append(part)
+            elif isinstance(part, dict):
+                parts.append(part.get("text") or "")
+        return "".join(parts)
+
+    return str(content) if content is not None else ""
+
+
+def build_agent(db: Session, current_user: User):
+    tools = build_tools(db=db, current_user=current_user)
+    model = ChatOpenAI(
+        api_key=settings.LLM_API_KEY,
+        base_url=settings.LLM_BASE_URL,
+        model=settings.LLM_MODEL,
+        temperature=0,
+        # 当前对话只保存正文；DeepSeek 的思考模式要求额外回传 reasoning_content。
+        extra_body=(
+            {"thinking": {"type": "disabled"}}
+            if urlparse(settings.LLM_BASE_URL).hostname == "api.deepseek.com"
+            else None
+        ),
+        streaming=True,  # 使用流式输出, stream_event 用于接收逐字返回的token
+    ).bind_tools(tools)
+
+    async def agent_node(state: MessagesState):
+        """LangGragh 执行的工作流的节点"""
+        # response = model.invoke(state["messages"])
+        response = await model.ainvoke(state["messages"])
+        # response = await model.astream(state["messages"])
+        return {"messages": [response]}
+
+    gragh = StateGraph(MessagesState)
+    gragh.add_node("agent", agent_node)  # 调用大模型的节点
+    gragh.add_node("tools", ToolNode(tools))  # tool call的节点
+    gragh.add_edge(START, "agent")  # 流程的起点, call LLM
+    gragh.add_conditional_edges(
+        "agent", tools_condition
+    )  # 判断是否有 tool_call, 有就继续call, 没有就END 输出
+    gragh.add_edge("tools", "agent")  # agent查看tool调用的结果
+    return gragh.compile()
+
+
+# def run_agent(db: Session, current_user: User, data: ChatRequest):
+#     """大模型对话"""
+#     try:
+#         if not data.messages:
+#             raise BusinessException(message="对话内容为空")
+
+#         history = _build_history(data)
+
+#         agent = build_agent(db, current_user)
+#         try:
+#             result = agent.invoke(
+#                 {"messages": [SystemMessage(content=SYSTEM_PROMPT), *history]},
+#                 # Tools share this request's SQLAlchemy session; execute them sequentially.
+#                 config={"recursion_limit": 10, "max_concurrency": 1},
+#             )  # 设置对话循环的上限是10轮
+#         except BusinessException:
+#             raise
+#         except Exception:
+#             raise BusinessException(message="大模型调用失败，请稍后重试")
+
+#         messages = result.get("messages") or []
+#         if not messages:
+#             raise BusinessException(message="大模型没有任何返回内容")
+
+#         message = messages[-1]
+#         if not isinstance(message, AIMessage) or message.tool_calls:
+#             raise BusinessException(message="大模型没有返回有效的回复内容")
+
+#         if message.invalid_tool_calls:
+#             raise BusinessException(message="助手未能正确调用工具，请重试", code=502)
+
+#         content = message.content
+
+#         # 处理字符串类型的回复
+#         if isinstance(content, str):
+#             content = content.strip()
+
+#         # 处理列表类型的回复
+#         elif isinstance(content, list):
+#             content = "".join(
+#                 (
+#                     part
+#                     if isinstance(part, str)
+#                     else part.get("text", "") if isinstance(part, dict) else ""
+#                 )
+#                 for part in content
+#             ).strip()
+
+#         else:
+#             content = ""
+
+#         if re.search(r"<\s*/?\s*(?:tool_call|function)\b", content, re.IGNORECASE):
+#             raise BusinessException(message="助手未能正确调用工具，请重试", code=502)
+
+#         if content:
+#             return content
+
+#         raise BusinessException(message="大模型没有返回有效的回复内容")
+
+#     except BusinessException as e:
+#         yield {"type": "error", "message": e.message}
+#     except Exception:
+#         yield {"type": "error", "message": "大模型调用失败，请稍后重试"}
+
+
+async def stream_agent(db: Session, current_user: User, data: ChatRequest):
+    """
+    生成器：边跑 agent 边 yield 事件，提供 SSE 输出给前端
+    事件的类型: status | tool_start | tool_end | token | done | error
+    """
+    try:
+        if not data.messages:
+            raise BusinessException(message="对话内容为空")
+
+        history = _build_history(data)
+
+        agent = build_agent(db, current_user)
+        inputs = {"messages": [SystemMessage(content=SYSTEM_PROMPT), *history]}
+
+        yield {"type": "status", "message": "正在思考..."}
+
+        async for event in agent.astream_events(
+            inputs, version="v2", config={"recursion_limit": 10}
+        ):
+            kind = event.get("event")
+            if kind == "on_tool_start":
+                name = event.get("name") or ""  # tool的名称
+                yield {
+                    "type": "tool_start",
+                    "name": name,
+                    "label": TOOL_LABELS.get(name, name),
+                }
+            elif kind == "on_tool_end":
+                name = event.get("name") or ""  # tool的名称
+                yield {
+                    "type": "tool_end",
+                    "name": name,
+                    "label": TOOL_LABELS.get(name, name),
+                    "preview": _tool_output_preview(
+                        (event.get("data") or {}).get("output")
+                    ),
+                }
+            elif kind == "on_chat_model_stream":
+                metadata = event.get("metadata") or {}
+                if metadata.get("langgraph_node") not in (None, "agent"):
+                    continue
+                text = _chunk_text((event.get("data") or {}).get("chunk"))
+                yield {"type": "token", "content": text}
+        yield {"type": "done"}
+
+    except BusinessException as e:
+        yield {"type": "error", "message": e.message}
+    except Exception:
+        yield {"type": "error", "message": "大模型调用失败，请稍后重试"}
+```
+
+</details>
+
+<details>
+<summary><code>backend/data/config_global/agent_config.py</code>（2026-10-26）</summary>
+
+```python
+import json
+from datetime import datetime
+from sqlalchemy.orm import Session
+from langchain_core.tools import tool
+from app.common.exceptions import BusinessException
+from app.schemas.reservation import ReservationCreateRequest
+from app.models.user import User
+from app.services import equipment_service, kb_service, lab_service, reservation_service
+
+SYSTEM_PROMPT = """你是智能实验室预约系统的 Agent，回答要简洁。
+你可以：
+1. 使用 search_lab_docs 查询实验室的规则、安全、开放时间等问题
+2. 使用 list_open_labs / list_lab_equipments 查询真实的实验室和设备
+3. 在用户进行预约确认后，使用 create_lab_reservation 来进行真实的预约写库
+4. 使用 get_today 来进行日期的换算
+
+## 必须遵守
+工具必须通过接口提供的工具调用机制执行，不要把 <tool_call> 或 <function=...> 等标记作为回复内容。
+工具名和参数以实际提供的工具定义为准，不要编造不存在的 search_for 等工具。
+只有工具返回成功后，才能告诉用户预约已提交；工具返回错误时说明失败原因，不要声称成功。
+当用户提到了 今天、明天、后天 等日期相关的问题，请先调用 get_today 来获取日期，**不要直接返回"我需要确定明天的具体日期"**
+
+在提交预约之前必须向用户复述实验室ID与名称（或设备ID和名称）、日期、开始时间、结束时间。并得到用户确认再进行实际操作。
+用户没说【确认】【确认预约】【就这样预约】等确定性回复之前，不要调用 create_lab_reservation。
+工作流的确认环节里如果缺少了 lab_id，请先 list_open_labs 查到了 lab_id 再创建，不要瞎写。
+工作流的确认环节里如果缺少了 equipment_id，请先 list_lab_equipments 查到了 equipment_id 再创建，不要瞎写。
+
+预约成功后状态是待审核，必须管理员确认后实验室（或设备）才能使用。
+不要瞎编数据库里没有的实验室或者设备信息。
+如果是问开放时间或者实验室规则，优先调用 search_lab_docs，不要凭空回复。
+"""
+
+TOOL_LABELS = {
+    "search_lab_docs": "检索实验室知识库",
+    "list_open_labs": "查询开放的实验室",
+    "list_lab_equipments": "查询实验室设备",
+    "create_lab_reservation": "创建预约单",
+    "get_today": "获取今天的日期",
+}
+
+
+def build_tools(db: Session, current_user: User):
+
+    @tool
+    def search_lab_docs(query: str) -> str:
+        """根据用户的提问去检索知识库"""
+        try:
+            return kb_service.search(query) or "没有检索到相关的资料"
+        except Exception as exc:
+            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+
+    @tool
+    def list_open_labs(keywords: str = "") -> str:
+        """查询开放中的实验室"""
+        try:
+            keywords = keywords.strip() or None
+            page = lab_service.get_lab_page_list(
+                db, page=1, page_size=10, keywords=keywords, status=1
+            )
+            rows = [
+                {
+                    "id": item.id,
+                    "name": item.name,
+                    "location": item.location,
+                    "capacity": item.capacity,
+                    "open_time": item.open_time,
+                    "close_time": item.close_time,
+                }
+                for item in page.list
+            ]
+            return json.dumps({"total": page.total, "labs": rows}, ensure_ascii=False)
+        except Exception as exc:
+            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+
+    @tool
+    def list_lab_equipments(lab_id: int, keywords: str = "") -> str:
+        """查询隶属于实验室的设备"""
+        try:
+            keywords = keywords.strip() or None
+            page = equipment_service.get_equipment_page_list(
+                db, page=1, page_size=10, lab_id=int(lab_id), keywords=keywords
+            )
+            rows = [
+                {
+                    "id": item.id,
+                    "name": item.name,
+                    "lab_id": item.lab_id,
+                    "lab_name": item.lab_name,
+                    "spec": item.spec,
+                    "quantity": item.quantity,
+                    "status": item.status,
+                }
+                for item in page.list
+            ]
+            return json.dumps(
+                {"total": page.total, "equipments": rows}, ensure_ascii=False
+            )
+        except Exception as exc:
+            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+
+    @tool
+    def create_lab_reservation(
+        lab_id: int,
+        date: str,
+        start_time: str,
+        end_time: str,
+        equipment_id: int | None = None,
+        remark: str | None = None,
+    ) -> str:
+        """创建预约"""
+        try:
+            data = ReservationCreateRequest(
+                lab_id=lab_id,
+                equipment_id=equipment_id,
+                date=date,
+                start_time=start_time,
+                end_time=end_time,
+                remark=remark,
+            )
+            reservation_service.create_reservation(db, current_user, data)
+
+            return json.dumps(
+                {
+                    "ok": True,
+                    "message": "预约已提交，请等待管理员审核",
+                    "lab_id": lab_id,
+                    "equipment_id": equipment_id,
+                    "date": date,
+                    "start_time": data.start_time,
+                    "end_time": data.end_time,
+                },
+                ensure_ascii=False,
+            )
+        except BusinessException as exc:
+            return json.dumps({"ok": False, "error": exc.message}, ensure_ascii=False)
+        except Exception as exc:
+            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+
+    @tool
+    def get_today() -> str:
+        """获取服务器当前日期，格式为 YYYY-MM-DD"""
+        now = datetime.now()
+        return now.strftime("%Y-%m-%d")
+
+    return [
+        search_lab_docs,
+        list_open_labs,
+        list_lab_equipments,
+        create_lab_reservation,
+        get_today,
+    ]
+```
+
+</details>
+
+<details>
+<summary><code>frontend/src/api/ai.js</code>（2026-10-26）</summary>
+
+```js
+// import request from '@/utils/request'
+import { getToken } from '@/utils/auth'
+
+// export function chatApi(data) {
+//   return request({
+//     url: '/api/ai/chat',
+//     method: 'post',
+//     data,
+//     timeout: 60000
+//   })
+// }
+
+export async function chatStreamApi(data, onEvent) {
+  const baseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
+  const token = getToken()
+
+  const res = await fetch(`${baseUrl}/api/ai/chat/stream`, {
+    method: 'post',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify(data)
+  })
+
+  if (res.status === 401) {
+    throw new Error('登录已失效，请重新登录')
+  }
+
+  if (!res.ok || !res.body) {
+    throw new Error('流式接口请求失败')
+  }
+  const contentType = res.headers.get('content-type') || ''
+  if (!contentType.includes('text/event-stream')) {
+    throw new Error('流式接口返回异常')
+  }
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder('utf-8')
+
+  const dispatchEvent = (chunk) => {
+    const data = chunk
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).trimStart())
+      .join('\n')
+      .trim()
+
+    if (!data || data === '[DONE]') return
+
+    let event
+    try {
+      event = JSON.parse(data)
+    } catch {
+      throw new Error('流式回复格式错误，请重试')
+    }
+    onEvent(event)
+  }
+
+  let buffer = ''
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      buffer += done ? decoder.decode() : decoder.decode(value, { stream: true })
+
+      // 每次收到数据就处理完整事件，保留跨网络数据块的残余内容。
+      const chunks = buffer.split(/\r?\n\r?\n/)
+      buffer = chunks.pop()
+      for (const chunk of chunks) dispatchEvent(chunk)
+
+      if (done) {
+        if (buffer.trim()) dispatchEvent(buffer)
+        break
+      }
+    }
+  } finally {
+    reader.releaseLock()
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><code>frontend/src/views/AIChat.vue</code>（2026-10-26）</summary>
+
+```vue
+<template>
+  <div>
+    <el-card>
+      <template #header>
+        <div style="font-size: 16px; font-weight: bold">
+          <span>AI智能助手</span>
+        </div>
+      </template>
+      <div
+        ref="listRef"
+        style="
+          height: 480px;
+          overflow-y: auto;
+          padding: 8px 4px;
+          background-color: #fafafa;
+          border-radius: 6px;
+        "
+      >
+        <div
+          v-for="(item, index) in messages"
+          :key="index"
+          :style="{
+            display: 'flex',
+            justifyContent: item.role === 'user' ? 'flex-end' : 'flex-start',
+            marginBottom: '12px'
+          }"
+        >
+          <div
+            :style="{
+              maxWidth: '70%',
+              padding: '10px 12px',
+              borderRadius: '8px',
+              backgroundColor: item.role === 'user' ? '#409eff' : '#fff',
+              color: item.role === 'user' ? '#fff' : '#333',
+              lineHeight: '1.6',
+              boxShadow: '0 1px 2px rgba(0 ,0, 0, 0.06)'
+            }"
+          >
+            <!-- 当前进行中的一句话，如「正在查询开放实验室...」 -->
+            <div
+              v-if="item.role === 'assistant' && item.status"
+              style="margin-bottom: 6px; font-size: 12px; color: #909399"
+            >
+              {{ item.status }}
+            </div>
+
+            <!-- 本轮已发生的过程列表，只展示不回传给后端 -->
+            <div
+              v-if="item.role === 'assistant' && item.steps?.length"
+              style="margin-bottom: 8px; font-size: 12px; color: #909399; line-height: 1.5"
+            >
+              <div v-for="(step, i) in item.steps" :key="i">· {{ step }}</div>
+            </div>
+
+            <div v-html="parseMarkdown(item.content)"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 输入框 -->
+      <div style="margin-top: 12px; display: flex; gap: 8px; align-items: flex-end">
+        <el-input
+          v-model="input"
+          type="textarea"
+          :rows="2"
+          placeholder="问问实验室怎么预约、开放时间..."
+          @keydown.enter.exact.prevent="handleSend"
+          @keydown.enter.shift.stop
+        ></el-input>
+        <el-button type="primary" :loading="loading" @click="handleSend">发送</el-button>
+      </div>
+    </el-card>
+  </div>
+</template>
+
+<script setup>
+import { ref, reactive, nextTick } from 'vue'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify' // 过滤危险的 HTML，防止 XSS 攻击
+import { chatStreamApi } from '@/api/ai'
+import { ElMessage } from 'element-plus'
+
+// 将 markdown 字符串转换为安全的 HTML 字符串
+const parseMarkdown = (text) => {
+  if (!text) return ''
+  // 使用 marked 解析，然后用 DOMPurify 清理
+  const rawHtml = marked.parse(text)
+  return DOMPurify.sanitize(rawHtml)
+}
+
+const messages = ref([
+  {
+    role: 'assistant',
+    content:
+      '你好, 我是实验室助手。你可以向我提问怎么预约、取消实验室或者设备, 也可以问我现在系统所存在的实验室与设备的具体信息, 还能让我帮你预约实验室或设备。'
+  }
+])
+
+const input = ref('')
+const loading = ref(false)
+const listRef = ref()
+
+const scrollToBottom = () => {
+  nextTick(() => {
+    const elem = listRef.value
+    if (elem) elem.scrollTop = elem.scrollHeight
+  })
+}
+
+// const handleSend = async () => {
+//   const text = input.value.trim()
+//   if (!text || loading.value) return
+//   messages.value.push({ role: 'user', content: text })
+//   input.value = ''
+//   loading.value = true
+//   scrollToBottom()
+//   try {
+//     const history = messages.value.filter(
+//       (item) => item.role === 'user' || item.role === 'assistant'
+//     )
+//     const res = await chatApi({ messages: history })
+//     if (res.code === 200) {
+//       messages.value.push(res.data)
+//       scrollToBottom()
+//     }
+//   } catch {
+//     // 请求失败时由请求拦截器提示错误。
+//   } finally {
+//     loading.value = false
+//   }
+// }
+const handleSend = async () => {
+  const text = input.value.trim()
+  if (!text || loading.value) return
+
+  messages.value.push({ role: 'user', content: text })
+  input.value = ''
+  loading.value = true
+  scrollToBottom()
+
+  // 必须用 reactive：普通对象 push 后再改字段，视图可能不更新
+  const assistant = reactive({
+    role: 'assistant',
+    content: '', // 正文：靠 token 一点点拼
+    status: '正在思考...', // 当前状态文案
+    steps: [] // 过程流水，不进下次 history
+  })
+  messages.value.push(assistant)
+
+  const history = messages.value
+    .filter((item) => item.role === 'user' || item.role === 'assistant')
+    .slice(0, -1) // 去掉刚插入的空助手，避免把空 content 送回去
+    // 只保留 role/content; status, steps 丢掉
+    .map(({ role, content }) => ({ role, content }))
+
+  try {
+    // 第二个参数是回调：每解析出一条 SSE 事件就进一次
+    await chatStreamApi({ messages: history }, (evt) => {
+      if (evt.type === 'status') {
+        assistant.status = evt.message || '正在思考...'
+      } else if (evt.type === 'tool_start') {
+        const label = evt.label || evt.name || '工具'
+        assistant.status = `正在${label}...`
+        assistant.steps.push(`开始: ${label}`)
+      } else if (evt.type === 'tool_end') {
+        const label = evt.label || evt.name || '工具'
+        assistant.status = `${label}完成`
+        assistant.steps.push(`完成: ${label}`)
+        if (evt.preview) {
+          assistant.steps.push(`输出结果: ${evt.preview}`)
+        }
+      } else if (evt.type === 'token') {
+        assistant.content += evt.content || '' // 打字机：追加，不是覆盖
+        assistant.status = '' // 开始出字后清掉「正在...」，避免叠在一起
+      } else if (evt.type === 'done') {
+        assistant.status = ''
+        // 注意：不要在这里再 append 一段完整正文，否则会双份
+      } else if (evt.type === 'error') {
+        assistant.status = ''
+        if (!assistant.content) {
+          assistant.content = evt.message || '请求失败'
+        }
+        ElMessage.error(evt.message || '请求失败')
+      }
+      scrollToBottom()
+    })
+  } catch (err) {
+    assistant.status = ''
+    if (!assistant.content) {
+      assistant.content = err.message || '网络异常'
+    }
+    ElMessage.error(err.message || '网络异常')
+  } finally {
+    loading.value = false
+    assistant.status = ''
+    scrollToBottom()
+  }
+}
+</script>
+```
+
+</details>
+
+<details>
+<summary><code>frontend/tests/ai.test.js</code>（2026-10-26）</summary>
+
+```js
+import assert from 'node:assert/strict'
+import { after, before, test } from 'node:test'
+import { fileURLToPath } from 'node:url'
+import { createServer } from 'vite'
+
+let server
+let chatStreamApi
+const encoder = new TextEncoder()
+
+before(async () => {
+  server = await createServer({
+    configFile: false,
+    envFile: false,
+    root: fileURLToPath(new URL('..', import.meta.url)),
+    resolve: { alias: { '@': fileURLToPath(new URL('../src', import.meta.url)) } },
+    server: { middlewareMode: true, hmr: false, watch: null },
+    optimizeDeps: { noDiscovery: true },
+    logLevel: 'error'
+  })
+  ;({ chatStreamApi } = await server.ssrLoadModule('/src/api/ai.js'))
+})
+
+after(async () => {
+  await server?.close()
+})
+
+const mockResponse = (t, response) => {
+  t.mock.method(globalThis, 'fetch', async () => response)
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: { getItem: () => 'test-token' }
+  })
+  t.after(() => {
+    if (descriptor) Object.defineProperty(globalThis, 'localStorage', descriptor)
+    else delete globalThis.localStorage
+  })
+}
+
+test(
+  'delivers replies before the connection closes and sends authenticated history',
+  { timeout: 5000 },
+  async (t) => {
+    let controller
+    const stream = new ReadableStream({
+      start(value) {
+        controller = value
+      }
+    })
+    mockResponse(t, new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } }))
+    const firstEvent = Promise.withResolvers()
+    const history = { messages: [{ role: 'user', content: '你好' }] }
+    const pending = chatStreamApi(history, firstEvent.resolve)
+
+    controller.enqueue(encoder.encode('data: {"type":"token","content":"你好"}\n\n'))
+    try {
+      assert.deepEqual(await firstEvent.promise, { type: 'token', content: '你好' })
+      const [url, options] = fetch.mock.calls[0].arguments
+      assert.equal(url, '/api/ai/chat/stream')
+      assert.equal(options.headers.Authorization, 'Bearer test-token')
+      assert.deepEqual(JSON.parse(options.body), history)
+    } finally {
+      controller.close()
+      await pending
+    }
+  }
+)
+
+test('preserves events and Chinese text across byte boundaries and CRLF frames', async (t) => {
+  const expected = [
+    { type: 'status', message: '正在思考...' },
+    { type: 'tool_start', label: '查询实验室' },
+    { type: 'tool_end', preview: '有两间实验室' },
+    { type: 'token', content: '你好，实验室助手' },
+    { type: 'done' }
+  ]
+  const wire =
+    ': keep-alive\r\n\r\n' +
+    expected.map((event) => `data: ${JSON.stringify(event)}\r\n\r\n`).join('') +
+    'data: [DONE]\r\n\r\n'
+  const stream = new ReadableStream({
+    start(controller) {
+      for (const byte of encoder.encode(wire)) controller.enqueue(Uint8Array.of(byte))
+      controller.close()
+    }
+  })
+  mockResponse(t, new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } }))
+  const events = []
+  await chatStreamApi({}, (event) => events.push(event))
+  assert.deepEqual(events, expected)
+  assert.equal(stream.locked, false)
+})
+
+test('delivers a final event without a trailing blank line', async (t) => {
+  mockResponse(
+    t,
+    new Response('data: {"type":"error","message":"模型不可用"}', {
+      headers: { 'Content-Type': 'text/event-stream' }
+    })
+  )
+  const events = []
+  await chatStreamApi({}, (event) => events.push(event))
+  assert.deepEqual(events, [{ type: 'error', message: '模型不可用' }])
+})
+
+test('reports an expired login', async (t) => {
+  mockResponse(t, new Response(null, { status: 401 }))
+  await assert.rejects(
+    chatStreamApi({}, () => {}),
+    /登录已失效/
+  )
+})
+
+test('reports responses without an SSE content type', async (t) => {
+  mockResponse(t, new Response(new Uint8Array()))
+  await assert.rejects(
+    chatStreamApi({}, () => {}),
+    /流式接口返回异常/
+  )
+})
+
+test('reports malformed events and releases the stream', async (t) => {
+  const response = new Response('data: invalid-json\n\n', {
+    headers: { 'Content-Type': 'text/event-stream' }
+  })
+  mockResponse(t, response)
+  await assert.rejects(
+    chatStreamApi({}, () => {}),
+    /流式回复格式错误/
+  )
+  assert.equal(response.body.locked, false)
+})
+
+test('propagates event handler errors to the send handler', async (t) => {
+  mockResponse(
+    t,
+    new Response('data: {"type":"done"}\n\n', {
+      headers: { 'Content-Type': 'text/event-stream' }
+    })
+  )
+  const error = new Error('handler failed')
+  await assert.rejects(
+    chatStreamApi({}, () => {
+      throw error
+    }),
+    error
+  )
+})
+```
+
+</details>
+
 <a id="19-code-flow"></a>
 
 ## 16. 整项目执行路线：从页面操作到数据库再返回
@@ -17818,7 +20192,7 @@ const handleSend = async () => {
 
 ### 16.2 启动阶段：两套程序分别准备好
 
-2026-10-23 补充：当前导入 AI 路由会加载向量模型，lifespan 还会创建过期扫描任务。向量集合仍延迟到首次检索创建。扩展启动路线见第 14.4 节与[应用生命周期](#app-lifespan)。
+2026-10-25：AI 路由调用 agent_service。导入 kb_service 时不立即加载模型；lifespan 根据 KB_WARMUP_ON_STARTUP 决定是否等待本地模型/集合预热（源码默认 True），之后创建扫描任务。关闭预热时首次实际检索再加载；详细见[当前生命周期](#kb-startup-lifecycle)和[知识库本地缓存](#kb-local-cache)。
 
 **前端启动路线。**
 
@@ -17856,9 +20230,10 @@ router/index.js 的 beforeEach 先用 utils/auth.js.getToken() 读取本地 toke
       database.py：create_engine(settings.DATABASE_URL)、SessionLocal、Base
       models/*.py：注册表、字段与关联关系
       api/__init__.py：建立 /api 总路由，include_router 各功能路由
-      AI 导入链：ai_service → kb_service → 加载 BGE 模型
+      AI 当前执行依赖：agent_service → agent_config → kb_service（导入不立即加载模型）
   → main.py：Base.metadata.create_all(bind=engine)
   → main.py：建立 app，注册中间件、总路由、异常处理器、/uploads 静态目录
+  → lifespan：开关为 true 时等待本地模型/集合预热，异常记日志后继续
   → lifespan 创建预约扫描任务：立即扫描，随后每轮结束等待 60 秒
   → Uvicorn 接收 HTTP 请求，交给这个 app
   → 关闭时 lifespan 取消扫描任务并等待退出
@@ -18604,6 +20979,18 @@ MyReservation.vue：load
 
 维护说明：章节按日期保存实现过程。已有问题修正后同步更新进度；正常流程、已知边界、隔离验证和真实浏览器验收分别记录。整个项目的从零复现仍需最终完成一次完整检查。
 
+<a id="agent-request-flow"></a>
+
+### 16.19 AI 流式预约路线：历史、图事件与页面增量
+
+当前路径是 AIChat.vue.handleSend → chatStreamApi → POST /api/ai/chat/stream。FastAPI 校验输入与身份，返回 StreamingResponse；event_generate 从 stream_agent 读取事件，再编码为 data: JSON 加空行。
+
+stream_agent 构造消息与图，astream_events 观察模型和工具执行。agent 节点用 ainvoke，模型增量转成 token；工具开始/结束转成中文进度与输出预览。创建预约仍进入 ReservationCreateRequest → create_reservation，写入当前用户的待审核记录，规则与原服务一致。
+
+前端 reader 读取字节，TextDecoder 处理 UTF-8 边界，buffer 保留半帧；完整事件交给回调，更新同一个 reactive 助手的 status/steps/content。history 下一次只重传 role/content，结束或错误后释放 reader 锁并复原 loading。六种事件、断流和数据库边界见[SSE 教程](#agent-sse)及[实际验收](#sse-validation)。
+
+确认通常仍是两次请求，且目前仅由提示词约束；输出中断不会自动撤销已经提交的预约。旧一次性 JSON 方案的调用路线保留在第 15.22 节。
+
 <a id="09-check"></a>
 
 ## 17. 启动、联调、排错与验证记录
@@ -18637,8 +21024,8 @@ MyReservation.vue：load
 5. 实现预约模型、时间与归属校验、冲突查询、事务回滚和重试；接入公共预约弹窗。
 6. 接入本人查询/取消和管理员审核；实现独立 Session 的过期扫描，在 main.py 中安排启动与退出清理。
 7. 整合 JWT UTC、前端会话版本、useRouter 导航与 useRoute 菜单状态，分别核对浏览器操作。
-8. 配置 AI 接口、前端页面和 BGE 模型，核对知识原文、集合模型与索引同步；加入只读工具声明、执行分发和消息循环。
-9. 恢复并维护测试文件，再运行对应回归和前端构建；当前 tests 目录缺失，不能把发现 0 项用例当成历史 19 项、6 项重新通过。
+8. 配置 AI 页面、LLM 与 BGE 本地缓存/预热；保留旧自定义循环，接入 LangChain 工具、LangGraph 消息图与预约写入，核对索引同步和确认边界。
+9. 运行现有 SSE 测试并维护对应回归；原后端与登录测试文件仍需恢复，不能把当前 7 项或发现 0 项当成历史 19/6 项重新通过。
 10. 在学习 MySQL、真实模型服务和浏览器分别验收正常与错误路径，包括并发、状态竞争、上传、检索及工具调用。
 11. 用新的空目录和空学习库再走一遍，记录遗漏依赖、配置、数据初始化与迁移差异。
 
@@ -18806,6 +21193,8 @@ location.reload();
 <a id="historical-regression"></a>
 
 ### 17.11 历史回归测试证明了什么（2026-10-20）
+
+2026-10-26：frontend/tests 现已有 SSE 的 ai.test.js；下面提到缺失的原测试文件和历史 19/6 项仍未恢复。当前 7 项流解析测试独立记录在第 15.61 节。
 
 2026-10-20 当时重新执行了仓库中的测试；当前缺少对应测试目录，下面命令保留为历史记录：
 
@@ -18985,16 +21374,18 @@ ThreadPoolExecutor 模拟多个执行线程，Barrier 让它们在某一步会�
 
 ### 18.10 AI 与知识库验收
 
-AI/RAG 的配置、检索和前端发送已讲解；真实模型服务、BGE/集合兼容、中文阈值、知识原文同步索引与 60 秒超时仍待联调，见[AI 检查与验收范围](#ai-validation)。只读工具验收见下一节。
+AI/RAG、本地缓存/预热和 SSE 发送已讲解；真实模型、集合兼容、中文阈值、索引同步与长连接超时/取消策略仍待联调。旧 Axios 60 秒配置不作用于当前 fetch。历史检查见[AI 验证记录](#ai-validation)，当前检查见[SSE 验收](#sse-validation)。
 
-### 18.11 Tool Calling 验收
+### 18.11 两种 Agent 实现、SSE 与当前框架验收
 
-- [x] 讲解两个只读工具的声明、分发和完整消息循环，对照实际改动更新 README。
-- [x] 实际函数的 30 个模拟断言及前端构建通过；验证范围见第 15.18 节。
-- [ ] 对接实际模型端点，确认支持 Chat Completions 工具协议，并验证是否按问题选择工具。
-- [ ] 补齐 lab_id、keywords 的参数约束，完善错误信息与最终汇总轮次预算。
-- [ ] 在学习数据上验证超过 10 条、无匹配、维修设备、停用实验室及身份边界。
-- [ ] 完成知识与数据库信息冲突、60 秒前端超时及浏览器完整流程验收。
+- [x] 保留自定义循环与框架 JSON 的完整教程和阶段快照，增加 SSE 前后端完整调用链。
+- [x] 讲解六种事件、异步生成器、分块解码、响应式助手、历史过滤、DeepSeek 分支与线程化扫描。
+- [x] 2026-10-26 实际运行现有 frontend/tests/ai.test.js，7 项通过；不等于旧 30 个模拟断言或历史登录 6 项重新通过。
+- [ ] 在真实浏览器、模型与代理下核对首片延迟、逐段正文、工具过程和错误反馈。
+- [ ] 核对 FastAPI 0.115.13 的流式依赖清理与异步 ToolNode 共用 Session 的并发问题。
+- [ ] 补齐流式最终输出校验、无 done 的异常截断识别、取消/超时/心跳策略与稳定调用 ID。
+- [ ] 实现后端强制确认、幂等与写入后结果追踪；验收断流后已经提交预约的行为。
+- [ ] 继续核对资源权限、日期、时段冲突、知识索引、缓存预热与扫描退出，按[流式验收清单](#sse-validation)记录真实结果。
 
 <a id="issue-status"></a>
 
@@ -19495,3 +21886,23 @@ current_user: User = Depends(get_current_user)
 - [Element Plus 表单](https://element-plus.org/en-US/component/form.html)
 - [JavaScript import](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Statements/import)
 - [JavaScript Promise](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Promise)
+
+### 20.3 LangChain 与 LangGraph
+
+本项目按 requirements.txt 的锁定版本和实际源码讲解；在线文档可能继续演进，示例导入路径应与安装版本核对。
+
+- [LangChain 工具定义](https://docs.langchain.com/oss/python/langchain/tools)：函数签名、类型与工具描述。
+- [模型的工具调用](https://docs.langchain.com/oss/python/langchain/models#tool-calling)：工具绑定与模型消息。
+- [LangGraph Graph API](https://docs.langchain.com/oss/python/langgraph/graph-api)：状态、reducer、节点、边与编译。
+- [tools_condition](https://reference.langchain.com/python/langgraph.prebuilt/tool_node/tools_condition)：工具路径与结束条件。
+- [ToolNode](https://reference.langchain.com/python/langgraph.prebuilt/tool_node/ToolNode)：工具执行节点。
+- [图执行步数限制](https://docs.langchain.com/oss/python/langgraph/graph-api#recursion-limit)：recursion_limit 的单位与边界。
+
+### 20.4 SSE、流式解码与异步生命周期
+
+- [MDN：SSE 消息格式](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events)。
+- [MDN：TextDecoder.decode](https://developer.mozilla.org/en-US/docs/Web/API/TextDecoder/decode)。
+- [LangGraph：流式机制](https://docs.langchain.com/oss/python/langgraph/streaming)；本项目具体使用 astream_events，事件字段还需核对锁定版本。
+- [FastAPI：yield 依赖与 StreamingResponse](https://fastapi.tiangolo.com/advanced/advanced-dependencies/#dependencies-with-yield-and-streamingresponse-technical-details)。
+- [Python：asyncio.to_thread](https://docs.python.org/3/library/asyncio-task.html#asyncio.to_thread)。
+- [DeepSeek：思考模式与工具调用](https://api-docs.deepseek.com/guides/thinking_mode/)。

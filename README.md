@@ -1,12 +1,12 @@
 # Lab_Agent — 实验室智能预约管理系统
 
-基于 FastAPI、Vue 3、MySQL 的实验室管理与预约项目。已实现主要预约业务流程、AI 对话、Markdown 知识库向量检索（RAG）和待审核预约过期扫描。AI 现支持通过 Tool Calling 查询数据库中的启用实验室及指定实验室的设备资料；尚未提供时段空闲查询或自动预约操作。
+基于 FastAPI、Vue 3、MySQL 的实验室管理与预约项目。当前 AI 模块采用 LangChain + LangGraph，通过 SSE 逐步显示状态、工具过程和正文，支持知识库检索、实验室/设备资料查询、服务器日期与创建预约五个工具。预约工具复用登录身份和原业务校验，写入待审核申请；确认目前由提示词引导，服务端强制确认、幂等与完整联调仍待完善。
 
-文档更新：2026-10-24。
+文档更新：2026-10-26。
 
 [AI 与知识库入门教程](demo_1代码学习_复习笔记.md#20-ai-rag) · [预约自动过期与扫描](demo_1代码学习_复习笔记.md#reservation-expiry) · [AI 配置与验收](#ai-rag-setup)
 
-[Tool Calling 详细教程](demo_1代码学习_复习笔记.md#22-tool-calling) · [工具执行路线图](#ai-tool-flow)
+[LangChain / LangGraph 与 SSE 教程](demo_1代码学习_复习笔记.md#agent-sse) · [工具执行路线图](#ai-tool-flow)
 
 [学习与复习笔记](demo_1代码学习_复习笔记.md) · [预约事务与并发教程](demo_1代码学习_复习笔记.md#reservation-concurrency) · [预约查询、取消与审核教程](demo_1代码学习_复习笔记.md#18-reservation-workflow)
 
@@ -23,10 +23,11 @@
 | 预约审核管理 | 管理员查询全部用户预约、查看预约人、通过或拒绝待审核预约；默认显示待审核 |
 | 数据一致性 | 创建预约的事务锁与死锁重试、用户名数据库唯一约束及升级脚本、有预约历史的资源和用户禁止删除 |
 | 表单和登录修补 | 设备新增重置、正整数容量、删除确认异常处理、JWT UTC 有效期、旧请求 401 防止误清新登录状态 |
-| AI 智能助手 | 登录后调用 POST /api/ai/chat；历史消息、静态知识检索、只读工具调用、模型回答、Markdown 渲染；单次前端请求超时 60 秒 |
-| AI 资源查询 | list_open_labs 查询启用实验室；list_lab_equipments 查询指定实验室设备；复用现有 service，结果回传模型整理 |
-| 本地知识库 | backend/data/kb 的 Markdown 文档，BGE 中文向量模型，Chroma 持久化，最多检索 5 条并筛选前 2 条 |
-| 过期扫描 | 启动后扫描待审核预约，再在每轮扫描结束后等待 60 秒；按预约结束时间判断过期并转为状态 3 |
+| AI 智能助手 | POST /api/ai/chat/stream → LangChain / LangGraph → SSE；逐步显示状态、工具过程和正文；fetch 目前未配置超时/取消 |
+| AI 资源查询 | list_open_labs 查询启用实验室；list_lab_equipments 查询指定实验室设备；复用既有 service，结果回传模型 |
+| AI 预约与日期 | get_today 获取服务器日期；create_lab_reservation 使用当前登录用户创建待审核预约，提示词要求复述并确认 |
+| 本地知识库 | search_lab_docs 调用 BGE/Chroma；只加载本地模型缓存，源码默认启动预热，最多检索 5 条并筛选前 2 条 |
+| 过期扫描 | asyncio.to_thread 执行同步扫描，每轮完成后等待 60 秒；按结束时间将过期待审核记录转为 3，循环处理取消 |
 
 **预约主要流程已接通。** 新记录为待审核（status=0）；本人可取消为 3，管理员可通过为 1 或拒绝为 2；后台扫描也会把已过期的待审核记录转为 3。当前仅允许操作待审核记录，取消会保留历史记录，已通过的预约不能再取消。状态 0、1 占用同资源时段，2、3 不占用；整间实验室与其设备仍分别检查冲突，设备 quantity 尚未用于按数量预约。
 
@@ -48,7 +49,10 @@
 | PyJWT | 2.13.0 |
 | python-multipart | 0.0.32，文件上传表单解析 |
 | cryptography | 50.0.1 |
-| openai | 3.14.1，调用兼容 Chat Completions 的接口 |
+| langchain-openai | 1.6.2，ChatOpenAI 模型调用与工具绑定 |
+| langchain-core | 1.6.3，消息类型与 @tool |
+| langgraph | 1.2.11，StateGraph、MessagesState 与 ToolNode |
+| openai | 3.14.1，兼容模型接口的 SDK 依赖 |
 | chromadb | 1.5.9，本地持久化向量库 |
 | sentence-transformers | 6.0.1，加载 BAAI/bge-small-zh-v1.5 |
 | MySQL | 建议 MySQL 8.x |
@@ -92,12 +96,13 @@ Lab_Agent/
 │   ├── uploads/            # 用户上传文件
 │   ├── data/
 │   │   ├── kb/            # 知识库 Markdown 原文
-│   │   ├── tools/         # ai_config.py：系统提示词与工具描述，属于源码
+│   │   ├── config_global/ # agent_config.py：当前 Agent 提示词与五个工具，属于源码
 │   │   └── chroma/        # 运行时生成的向量库与索引
 │   └── requirements.txt
 │
 ├── frontend/
 │   ├── public/
+│   ├── tests/             # ai.test.js：SSE 解析与错误处理测试
 │   ├── src/
 │   │   ├── api/            # API 请求封装
 │   │   ├── assets/         # 静态资源
@@ -119,7 +124,7 @@ Lab_Agent/
 
 说明：`.env`、`.venv`、`node_modules` 等文件或目录不会包含在 GitHub 仓库中，需要在下载代码后自行配置或安装。具体目录以仓库当前版本为准。
 
-当前工作区未包含早期记录引用的 `docs/`、`backend/tests/` 和 `frontend/tests/`。历史说明保留在学习笔记中；不要把早期测试结果视为当前版本可直接重跑的测试套件。
+早期 docs 与原后端/前端回归文件仍未恢复；当前已有 frontend/tests/ai.test.js，提供 7 项 SSE 解析与错误处理测试。它们不替代历史登录、数据库并发或真实端到端验收。
 
 ## 3. 环境准备
 
@@ -393,6 +398,9 @@ JWT_ALGORITHM=HS256
 LLM_API_KEY=YOUR_LLM_API_KEY
 LLM_MODEL=YOUR_CHAT_MODEL_ID
 LLM_BASE_URL=https://YOUR_PROVIDER_HOST/v1
+
+# 可选：源码默认 true；false 表示跳过启动预热
+KB_WARMUP_ON_STARTUP=true
 ```
 
 参数说明：
@@ -406,6 +414,7 @@ LLM_BASE_URL=https://YOUR_PROVIDER_HOST/v1
 | LLM_API_KEY | 大模型接口密钥，仅保存在后端 | 是 |
 | LLM_MODEL | 服务端支持的聊天模型标识 | 是 |
 | LLM_BASE_URL | 兼容 Chat Completions 的服务基础地址 | 是 |
+| KB_WARMUP_ON_STARTUP | 是否等待知识库预热后再启动；仅加载本地缓存 | 否，源码默认 true，可通过环境配置覆盖 |
 
 当前 Settings 在导入时校验配置，这三个 LLM 字段没有默认值，即使暂时不打开 AI 页面也必须配置。示例域名及模型 ID 是占位符，不能直接用于请求。向量模型名称在 kb_service.py 中设置，与 LLM_MODEL 是两个独立配置。
 
@@ -987,6 +996,9 @@ JWT_ALGORITHM=HS256
 LLM_API_KEY=YOUR_LLM_API_KEY
 LLM_MODEL=YOUR_CHAT_MODEL_ID
 LLM_BASE_URL=https://YOUR_PROVIDER_HOST/v1
+
+# 可选：源码默认 true；false 表示跳过启动预热
+KB_WARMUP_ON_STARTUP=true
 ```
 
 ### frontend/.env.example
@@ -1079,7 +1091,7 @@ GitHub：
 
 https://github.com/JasonCauly/Lab_Agent
 
-预约主要业务代码、AI 对话、静态知识库检索和两项只读资源查询工具已写出。下一阶段重点是完善工具参数与循环边界、保护预约状态更新、校准知识原文与业务规则，并完成真实模型及浏览器验收。最新逐步讲解和代码快照见 [Tool Calling 第 15 章](demo_1代码学习_复习笔记.md#22-tool-calling)。
+预约主要业务与 LangChain / LangGraph 五工具 Agent 已写出，包括真实创建待审核预约。后续重点是强制确认、幂等与结果追踪、预约状态并发保护、知识规则校准及真实模型/浏览器验收。当前讲解见[框架 Agent 教程](demo_1代码学习_复习笔记.md#langchain-langgraph-agent)。
 
 <a id="runtime-flow"></a>
 
@@ -1101,6 +1113,7 @@ flowchart TD
         B0["uvicorn app.main:app → main.py"] --> B1["导入配置、数据库、模型、路由"]
         B1 --> B2["config.py → settings；database.py → engine / SessionLocal"]
         B1 --> B3["模型注册 → create_all；include_router；异常处理与静态目录"]
+        B3 --> BW["lifespan：按开关等待本地知识库预热，再启动扫描"]
     end
     F4 --> E["页面事件或 onMounted → 页面函数"]
     E --> A["前端 api/*.js：构造 method、url、params/data"]
@@ -1249,161 +1262,174 @@ flowchart TD
 
 <a id="ai-rag-setup"></a>
 
-## 16. AI 智能助手、知识库与工具调用
+## 16. LangChain / LangGraph Agent、知识库与预约工具
 
-### 16.1 当前能力与入口
+### 16.1 当前 SSE 能力与入口
 
-学生菜单新增“AI智能助手”，页面路径为 `/manager/aichat`。后端 `POST /api/ai/chat` 使用 `get_current_user` 校验登录，没有限定 student 角色；菜单可见性与接口权限是不同层面的规则。
-
-当前功能接收历史消息，先检索静态资料，再把工具定义一起发给聊天模型。模型可选择调用资源查询工具，由后端执行现有实验室/设备 service，并把结果交回模型生成回答。对话历史只保存在页面内存，刷新后恢复欢迎语；单次请求中的工具消息只保留在后端临时 messages 中，未写入聊天记录表。
+页面位于 /manager/aichat，当前入口是 POST /api/ai/chat/stream。API 使用 get_current_user 验证登录，没有额外限定 student 角色；返回 text/event-stream，不返回完整的 Response.success JSON。前端 chatStreamApi 使用带 Bearer 头的 POST fetch 读取流，页面显示状态、工具步骤和增量 Markdown。
 
 ```mermaid
 flowchart TD
-    A["AIChat.vue：handleSend"] --> B["api/ai.js：chatApi，60 秒超时"]
-    B --> C["POST /api/ai/chat：get_current_user、get_db"]
-    C --> D["ai_service.chat(db, data)：整理历史"]
-    D --> E["kb_service.search → BGE / Chroma → 静态资料"]
-    E --> F["system + history；data/tools/ai_config.py 提供 TOOLS"]
-    F --> G["Chat Completions，tool_choice=auto；最多 3 轮"]
-    G --> H{"有 tool_calls？"}
-    H -->|否| I["取文本 → Response.success → 页面 Markdown 渲染"]
-    H -->|是| J["保存 assistant 工具请求 → run_tool"]
-    J --> K["lab_service / equipment_service → MySQL 只读查询"]
-    K --> L["JSON 结果 → role=tool，关联 tool_call_id"]
-    L --> M{"还剩模型调用轮次？"}
-    M -->|是| G
-    M -->|否| N["结束并返回业务错误"]
+    V["AIChat.vue：reactive 空助手 + 历史"] --> F["chatStreamApi：POST fetch + Authorization"]
+    F --> A["/api/ai/chat/stream：StreamingResponse"]
+    A --> S["stream_agent：astream_events v2"]
+    S --> G["LangGraph：模型 ainvoke / ToolNode"]
+    G --> E["status / tool_start / tool_end / token / done / error"]
+    E --> W["data: JSON + 空行"]
+    W --> D["reader → TextDecoder → buffer 分帧"]
+    D --> C["onEvent → status、steps、content"]
+    C --> V
 ```
 
-### 16.2 配置与首次启动
+五个工具继续复用知识库、资源与预约服务；图的 recursion_limit=10 是执行步数上限。当前异步调用未传 max_concurrency，同批工具可能并发，共享 Session 的隔离仍需完善。知识检索由 search_lab_docs 触发，不是每次提问固定执行。
 
-1. 在 backend 中使用虚拟环境安装 `requirements.txt`，在 frontend 中运行 `npm install`，安装与当前代码匹配的依赖。
-2. 按第 6.4 节配置三个 LLM 字段；保留数据库和 JWT 配置。接口密钥只用于后端请求。
-3. 确认 `backend/data/kb` 中有预约规则、安全规则、开放时间、设备使用四份 Markdown 文件。
-4. 启动后端。当前 `SentenceTransformerEmbeddingFunction` 在模块顶层实例化，导入路由时就可能加载或下载 `BAAI/bge-small-zh-v1.5`；模型准备失败可能发生在应用启动阶段。
-5. 登录后在 AI 页面提问，首次 `search()` 才进入 `get_collection()` 创建 `backend/data/chroma`、读取原文并写入空集合。
+### 16.2 依赖、配置与首次启动
 
-工具调用另需确认：配置的服务端点和 LLM_MODEL 支持当前 Chat Completions 的 tools、tool_calls 与工具结果消息格式；只支持普通聊天的兼容接口不一定支持这些字段。保留 `backend/data/tools/ai_config.py`，从 backend 目录启动，确保 `from data.tools.ai_config import ...` 可以解析；该目录是代码，不是生成的索引。
+1. 使用后端虚拟环境安装 requirements.txt；其中固定 langgraph 1.2.11、langchain-openai 1.6.2、langchain-core 1.6.3。前端按 package-lock.json 安装依赖。
+2. 按第 6.4 节设置数据库、JWT 和 LLM_API_KEY/LLM_MODEL/LLM_BASE_URL；所选模型服务必须支持结构化工具调用。
+3. 保留 `backend/data/config_global/agent_config.py`，从 backend 目录启动；它是工具与提示词源码。确认 `backend/data/kb` 中的 Markdown 资料。
+4. 提前准备 `BAAI/bge-small-zh-v1.5` 完整本地缓存。加载时指定 `local_files_only=True`，应用不会自动从 Hugging Face 下载缺失文件。
 
-聊天模型和向量模型分别负责生成回答、将文本转为检索向量。此前日志里的 `all-MiniLM-L6-v2/onnx.tar.gz` 属于旧版默认向量模型下载记录；当前源码已经显式选择 BGE。下载进度完成只说明模型文件准备的一部分完成，不能据此判断整个聊天请求成功。
+在可访问 Hugging Face 的网络下，从 backend 使用虚拟环境准备缓存：
 
-### 16.3 数据目录与更新方式
+```powershell
+.\.venv\Scripts\python.exe -c "from huggingface_hub import snapshot_download; snapshot_download('BAAI/bge-small-zh-v1.5')"
+```
 
-| 位置 | 内容 | 当前行为 |
-| --- | --- | --- |
-| backend/data/kb | 人工维护的 Markdown 原文 | 只扫描当前目录的 `*.md`；一篇非空文件对应一条文档 |
-| backend/data/tools/ai_config.py | SYSTEM_PROMPT 与 TOOLS | Python 模块，由 ai_service 导入；不进入 Chroma 文档检索 |
-| backend/data/chroma | chroma.sqlite3 及索引目录等运行数据 | PersistentClient 自动持久化，路径来自 backend 的 BASE_DIR |
-| 模型缓存 | 下载后的向量模型文件 | 由模型加载库管理，与 Chroma 文档数据库分开 |
-| `_collection` | 当前进程中的集合对象 | 后续调用复用，重启进程后重新取得持久化集合 |
+当前 Settings 源码中 `KB_WARMUP_ON_STARTUP: bool = True`。未覆盖配置时，lifespan 会先 `await asyncio.to_thread(kb_service.warmup)`，等待本地模型/集合准备和一次预热查询，再创建预约扫描任务。预热异常记录日志后继续启动，不代表知识检索已经可用。
 
-当前仅在 `col.count() == 0` 时批量添加文档。修改、增加或删除 Markdown 后，已有集合不会自动同步，单纯重启也不会覆盖原向量。需另行实现文档同步，或备份原数据后使用新集合重新索引。切换向量模型时也应重新生成同一检索空间中的文档向量；即使两个模型维度相同，也不能混用其向量。当前没有自动重建命令，本次文档更新没有删除或重建数据库。
+在 backend/.env 设置 `KB_WARMUP_ON_STARTUP=false` 可跳过启动预热，此时首次真正调用 search_lab_docs 才加载模型、初始化集合。环境配置可覆盖源码默认值。只导入 kb_service 不会立即加载模型；预热和首次检索会触发实际加载。[本地模型加载参数](https://www.sbert.net/docs/package_reference/sentence_transformer/model.html)
 
-当前代码最多检索 5 条，用 `1 / (1 + distance)` 计算排序分数，保留分数不低于 0.5 的结果，再取前 2 条。该分数是自定义的距离变换，不是回答正确率；阈值需结合集合距离度量、模型和中文问题样例校准。
+### 16.3 源码、知识原文与运行数据
 
-### 16.4 请求与响应示例
+| 位置 | 作用 |
+| --- | --- |
+| backend/app/services/agent_service.py | 构建异步消息图、观察事件并生成页面 SSE 数据 |
+| backend/data/config_global/agent_config.py | 提示词、五个工具定义与 TOOL_LABELS 中文进度名称 |
+| backend/app/services/kb_service.py | BGE 本地加载、Chroma 集合、预热和检索筛选 |
+| backend/data/kb | 人工维护的 Markdown 原文，每篇非空文件整体作为一条文档 |
+| backend/data/chroma | 持久化向量集合及索引；与模型文件缓存不同 |
+| 模型缓存 | 预先下载的 BGE 文件，由模型加载库管理 |
 
-在已登录会话中提交：
+get_collection 仅在空集合时读取 Markdown 入库；修改、增加或删除原文，不会自动同步已有集合，重启和 warmup 也不会覆盖旧文档。切换嵌入模型时应重新建立匹配的索引。当前没有自动重建命令。
+
+检索最多取 5 条候选，按 `1 / (1 + distance)` 筛掉低于 0.5 的结果，再取前 2 条拼接。此分数不是回答正确率，需用实际中文问题校准；与 LangGraph 的图步数限制无关。
+
+### 16.4 请求、事件与前端历史
+
+登录后 POST /api/ai/chat/stream 的请求体：
 
 ```json
 {"messages":[{"role":"user","content":"实验室安全规范"}]}
 ```
 
-成功响应的结构示意（正文由模型生成）：
+SSE 响应示意，每帧以空行分隔：
 
-```json
-{"code":200,"message":"请求成功","data":{"role":"assistant","content":"根据实验室资料整理的回答……"}}
+```text
+data: {"type":"status","message":"正在思考..."}
+
+data: {"type":"tool_start","name":"search_lab_docs","label":"检索实验室知识库"}
+
+data: {"type":"tool_end","name":"search_lab_docs","label":"检索实验室知识库","preview":"检索资料片段…"}
+
+data: {"type":"token","content":"根据资料"}
+
+data: {"type":"done"}
+
 ```
 
-页面调用 `marked.parse()` 转换 Markdown，再通过 `DOMPurify.sanitize()` 清理后交给 `v-html`。发送按钮显示 loading，处理函数捕获被拒绝的请求，`finally` 恢复按钮状态；具体失败提示仍由 Axios 拦截器展示。接口仍为一次性响应，前端超时已从 30 秒改为 60 秒，覆盖这一整个聊天 HTTP 请求，不是每轮模型调用各有 60 秒。前端超时也不等于后端工作立即停止。
+执行异常通过 type=error/message 返回，正常结束发送 done。tool_end 仅表示工具返回，done 仅表示事件迭代结束，二者均不保证预约写入成功。当前 token 可能包含工具前的模型说明或空字符串，未另行确认只转发最终答案。
 
-### 16.5 本轮修补与常见故障
+前端用 TextDecoder 的流模式保留跨块 UTF-8 字节，用 buffer 保留半帧，完整事件立即分发。history 只重传 role/content，不包含 status/steps，也排除本轮空助手；正文仍经 marked 与 DOMPurify。没有服务端会话持久化，刷新后历史重置。
 
-| 现象 | 已核对的原因与处理 |
+fetch 未配置应用级超时、AbortController、重连或心跳；releaseLock 只释放读取器锁，不取消请求。401 由页面提示，未接入 Axios 的自动登出与跳转。未收到 done 就 EOF 的检测以及部分失败内容的历史过滤仍待完善。
+
+### 16.5 当前故障定位与生命周期
+
+| 现象 | 当前应核对的路径 |
 | --- | --- |
-| dict 没有 role/content 属性 | `model_dump()` 后使用 `item["role"]` 和 `item["content"]` |
-| system_prompt 未初始化 | 每次请求先执行 `system_prompt = SYSTEM_PROMPT` |
-| expected 3, got 2 | 三个变量必须对应 `zip(docs, metas, distances)` 三个列表 |
-| join 报字典类型错误 | 拼接提取出的字符串列表 `final_parts` |
-| 只返回第一条资料 | return 位于循环外；当前再按分数选前两条 |
-| 没有向量目录 | 先确认已进入 search，再看初始化或模型错误；配置路径为 backend/data/chroma |
-| print 没输出 | 确认文件已保存、函数已调用、打印在 return 前；在 Uvicorn 终端查看，可加 flush=True |
-| Task exception was never retrieved | 曾由 changed 未初始化导致；现已在循环前设为 False，但其他未处理异常仍会终止扫描任务 |
-| 退出时 CancelledError | 查看是否与停止/重载及新进程启动相邻；当前 lifespan 会取消并等待扫描任务。运行中异常仍需看完整堆栈 |
+| 连接结束才出现全部文字 | 检查模型是否有增量事件、前端是否立即分发完整帧、代理是否缓冲；X-Accel-Buffering:no 仍需部署验证 |
+| 中文乱码、JSON 被截断 | 区分 UTF-8 字节边界与 SSE 帧边界；分别检查 TextDecoder 和 buffer |
+| 字节到达而 UI 不更新 | 回调应修改 reactive 助手代理，token 追加而非覆盖 |
+| 状态显示工具完成但预约失败 | tool_end 可能携带 ok=false 的工具返回；核对 preview、错误和真实记录 |
+| 无正文或出现伪工具标签 | 当前流分支尚未复用最终 AIMessage/invalid_tool_calls/伪标签校验，需要补齐 |
+| DeepSeek 工具调用兼容问题 | hostname=api.deepseek.com 时设置 thinking.type="disabled"；当前仅回传正文，未实现 reasoning_content 流程 |
+| 401 或响应并非 SSE | 核对 token、实际 /chat/stream 路由和响应头；前端目前多为通用错误文案 |
+| 知识库不可用 | 核对本地 BGE 缓存、预热日志与已有向量集合，原文修改不会自动同步 |
+| 多工具或断流时数据库异常 | 核对异步工具共用 Session 和 yield 依赖的清理时机 |
 
-### 16.6 待校准的知识内容与业务边界
+当前 FastAPI 0.115.13 的 yield 依赖清理发生在发送 StreamingResponse 之前；get_db 会先 close，后续生成器却仍引用该 db。SQLAlchemy 的默认会话可能重置后再使用而不立即报错，但后续连接释放与 ORM 状态仍需处理。不能直接按“依赖保持到流结束”推断安全，详见[流式会话说明](demo_1代码学习_复习笔记.md#sse-session-lifecycle)。
 
-当前知识文件有两处明确冲突，不能因为检索成功就把模型回答当作接口规则：
+预约扫描现使用 to_thread，并捕获取消后结束循环；取消协程不会强制停止已经运行的线程内数据库操作。main.py 仍负责取消并等待扫描任务。Windows 重载日志可结合新进程启动与接口响应判断；可去掉 --reload 手动重启，区分退出日志与运行故障。
 
-- `预约规则.md` 写“待审核、已通过的预约，本人可以取消”，而 `cancel_reservation()` 只允许状态 0。需按确认后的业务政策同步文档或实现。
-- `设备使用.md` 写“约了设备，时段内实验室也占用”，而当前创建逻辑分别检查设备预约和整间实验室预约的冲突。
+流开始前的 HTTP/JSON 错误与流内 type=error 分别处理；收到 HTTP 200 不代表本轮业务成功。当前尚未建立流断开后撤销工具写入的机制。
 
-Markdown 开放时间仍是静态资料；新的实验室工具能读取数据库 open_time/close_time，但没有自动同步 Markdown，也没有检查当前时刻、指定日期或预约冲突。“启用实验室”不等于“现在空闲”，quantity 也不是扣除预约后的可用库存。审核、取消及过期扫描目前没有统一的原子状态转换保护；自动过期不等于审核时已增加过期判断。
+### 16.6 预约确认、知识与业务边界
 
-### 16.7 验收与后续智能体步骤
+提示词要求先查询真实资源、复述资源 ID/名称和日期时段，得到用户明确确认后才调用创建工具；相对日期先用 get_today 获取服务器日期。当前确认依靠提示词和前端重传历史，没有服务端强制确认节点、确认凭据或写入前 confirmed 校验。
 
-- 验证登录用户可以请求、未登录请求被拒绝，菜单角色展示与接口规则符合预期。
-- 首次检索后检查持久化目录；用安全、预约、开放时间和无关问题检查检索文本、筛选分数及最终回答。
-- 修改原文后确认理解“不会自动同步”的现状，再验证未来实现的重建或 upsert 方案。
-- 验证前端失败提示、发送状态和重复点击；检查空集合、无匹配结果、模型接口失败等路径。
-- 用学习数据库验证空预约表、全部未过期、结束时刻到达、已通过预约以及服务关闭；已通过状态不应被本扫描修改。
+创建工具复用登录身份、ReservationCreateRequest 和原预约 service 的资源/冲突/事务规则。提交成功为 status=0，仍需管理员审核；没有 AI 取消、审核、本人预约查询或单独的时段空闲查询工具。启用实验室不等于某时段可用，设备 quantity 不是剩余库存。
 
-2026-10-23 本次更新核对了当前源码与历史修补，并检查文档结构、链接及代码快照一致性。此前对话中已进行过扫描生命周期和 AI 路由的临时隔离测试；模拟模型返回通过不代表真实 BGE 推理、大模型服务、MySQL 并发或浏览器端到端验收通过。这些临时检查没有形成仓库测试套件。
+当前知识文件仍需校准：预约规则写已通过也可本人取消，但服务只允许取消待审核；设备使用写预约设备同时占用实验室，而当前冲突按设备和整间实验室分别检查。Markdown 开放时间与数据库字段也没有自动同步。应以实际业务规则核验结果，并同步原文与向量索引。
 
-只读资源查询工具现已接入；后续若扩展预约操作，需要将当前用户上下文传入工具执行层，并复用权限、事务及状态规则，补上操作确认、错误反馈和结果追踪。当前没有创建、取消或审核预约的 AI 工具。最新流程与限制见下节及学习笔记第 15 章。
+图执行没有包裹成一笔数据库事务。创建预约已提交后，模型失败、图步数耗尽或前端断流不会撤销记录；当前没有请求级幂等键。审核、取消与扫描的并发状态更新也仍需完善。
+
+### 16.7 实际验收清单
+
+- 验证未登录与不同用户身份，连接未关闭前即可逐段显示状态、工具过程和正文。
+- 覆盖长回答、中文跨块、空片段、Markdown 代码块、多个工具和重复工具调用。
+- 覆盖空历史、非 SSE 响应、模型失败、解析失败、无 done 的提前 EOF 和长时间无数据。
+- 核对代理缓冲、跨域认证、断网/关页后的 loading、连接和数据库清理。
+- 在学习库验收预约确认、冲突、工具失败、写入后断流和重复确认，不能只看“工具完成”文案。
+- 检查 FastAPI 版本相关的依赖 Session 生命周期，以及异步工具并发使用同一 Session 的问题。
+- 继续验收强制确认、幂等、最终文本校验、停止按钮/超时/心跳策略及后台扫描退出。
 
 <a id="ai-tool-flow"></a>
 
-### 16.8 Tool Calling：从模型提出查询到后端执行
+### 16.8 五个工具与预约执行路线
 
-| 工具名 | 输入 | 实际调用 | 返回范围 |
-| --- | --- | --- | --- |
-| list_open_labs | 可选 keywords | lab_service.get_lab_page_list，status=1 | 第 1 页，最多 10 个启用实验室；总数及 ID、名称、位置、容量、开放时段 |
-| list_lab_equipments | lab_id；可选 keywords | equipment_service.get_equipment_page_list | 第 1 页，最多 10 条设备；总数及名称、型号、数量、状态等；未过滤维修设备 |
-
-以下以“某个实验室有哪些设备”为例，ID 由实验室查询结果获得；是否这样分步调用由模型决定：
+| 工具 | 输入 | 实际调用与返回 |
+| --- | --- | --- |
+| search_lab_docs | query | kb_service.search，返回资料或未检索到的提示 |
+| list_open_labs | 可选 keywords | 启用实验室第 1 页、最多 10 条，返回 total 与资料 |
+| list_lab_equipments | lab_id、可选 keywords | 指定实验室设备第 1 页、最多 10 条，不自动筛掉维修设备 |
+| create_lab_reservation | 资源 ID、日期、起止时间；可选设备与备注 | 原预约 service 写入，返回 ok、资源与规范化时段，未返回新预约 ID |
+| get_today | 无 | 服务器 datetime.now() 的日期，供模型换算相对日期 |
 
 ```mermaid
 sequenceDiagram
     actor U as 用户
     participant V as AIChat.vue
-    participant A as api/ai.py → ai_service.chat
-    participant L as 配置的聊天模型
-    participant T as ai_service.run_tool
-    participant S as lab_service / equipment_service
-    U->>V: 输入某实验室有哪些设备
-    V->>A: chatApi → POST /api/ai/chat
-    Note over A: 登录校验、db 会话、历史消息、知识检索
-    A->>L: 第 1 轮：messages + TOOLS
-    L-->>A: tool_calls：list_open_labs，名称关键词
-    A->>T: run_tool(db, name, arguments)
-    T->>S: get_lab_page_list(..., status=1)
-    S-->>T: 查询结果
-    T-->>A: JSON 字符串，含实验室 ID
-    A->>L: 第 2 轮：追加 assistant 调用和 tool 结果
-    L-->>A: tool_calls：list_lab_equipments，lab_id
-    A->>T: run_tool(db, name, arguments)
-    T->>S: get_equipment_page_list(..., lab_id=...)
-    S-->>T: 设备结果
-    T-->>A: JSON 字符串
-    A->>L: 第 3 轮：再追加调用与结果
-    L-->>A: 最终回答文本
-    A-->>V: Response.success(ChatMessage)
-    V-->>U: marked → DOMPurify → 显示回答
+    participant A as stream_agent / StateGraph
+    participant L as ChatOpenAI 绑定的模型
+    participant T as ToolNode
+    participant S as 业务 service / MySQL
+    U->>V: 描述预约资源和明天的时段
+    V->>A: 第一次 POST，包含文本历史
+    A->>L: 消息与五个工具定义
+    L-->>A: 结构化日期/资源查询调用
+    A->>T: 执行 get_today 和所需资源查询
+    T-->>A: ToolMessage
+    A->>L: 查询结果与历史
+    L-->>A: 复述资源、日期时段，询问确认
+    A-->>V: SSE token 输出确认问题，再 done
+    U->>V: 确认预约
+    V->>A: 第二次 POST，重传历史与确认文字
+    A->>L: 新图读取对话上下文
+    L-->>A: create_lab_reservation 工具调用
+    A->>T: 执行创建工具
+    T->>S: create_reservation(db, current_user, data)
+    S-->>T: 校验通过后提交 status=0
+    T-->>A: 工具成功 JSON
+    A->>L: 工具结果
+    L-->>A: 已提交，等待管理员审核
+    A-->>V: SSE 工具过程与增量正文，再 done
 ```
 
-工具分发直接调用 Python service，不会让浏览器另发 `/api/lab/list` 或 `/api/equipment/list`。模型只提出工具名和 JSON 参数；本地代码解析、选择允许的函数并执行。[OpenAI 官方工具调用说明（本项目使用 Chat Completions 格式）](https://developers.openai.com/api/docs/guides/function-calling)
+这是符合提示词的示意流程；工具顺序由模型决定，确认并非后端硬性中断节点。工具直接调用 Python service，不经过浏览器再次请求资源 API。详细讲解见[当前 SSE Agent 教程](demo_1代码学习_复习笔记.md#agent-sse)。
 
-当前实现的边界：
+### 16.9 本次测试与文档核对范围
 
-- `range(3)` 限制的是模型调用轮数，单轮可以返回多个工具调用；本地 for 循环逐个执行。第 3 轮若仍要求工具，会执行工具后报错，没有第 4 轮汇总机会。
-- `tool_choice="auto"` 允许模型不调用工具；提示词要求资源查询使用工具，但代码未额外验证模型是否遵守。
-- 工具 schema 尚未声明 `required: ["lab_id"]`，本地也未做完整的正整数/字符串类型校验；缺参或执行错误目前作为 JSON error 交回模型。
-- 循环内的空回答和轮次耗尽错误会被外层 `except Exception` 改成“大模型调用失败, 请稍后重试”；run_tool 则会把原始异常文本放进工具结果，错误反馈仍需整理。
-- 本轮只读工具查公共资源，API 校验登录，但 current_user 没有传入 run_tool；以后涉及本人预约的数据查询或写入，不能仅靠提示词限制权限。
+2026-10-26，在 frontend 目录执行 `node --test tests/ai.test.js`，7 项通过、0 失败。用例加载实际 chatStreamApi，模拟 fetch/ReadableStream，覆盖未关闭连接时分发、中文跨字节块与 CRLF、无尾空行、401、响应类型、非法 JSON 和回调错误。
 
-### 16.9 本轮检查与实际验收
-
-2026-10-24：从实际 ai_service 源码提取函数，以模拟模型、知识检索和业务 service 执行 30 个断言，覆盖参数解析、两种工具分发、工具消息配对、直接回答、连续两次查询、单轮多工具、轮次耗尽和错误包装；检查通过。前端构建通过，仍有包体积提示。未调用真实模型、读取现有业务数据库或重建 Chroma；这些临时检查未新增为仓库测试文件。
-
-实际联调时请检查：“有哪些启用实验室”“指定实验室的设备”“无匹配资源”“缺实验室 ID”“超过 10 条记录”“维修设备”“帮我预约”及模型服务失败场景。观察模型是否真正返回 tool_calls、结果 ID 是否配对、回答是否区分启用与空闲，以及 60 秒内能否完成。详细逐步解释、复现顺序和当前代码快照见 [教学第 15 章](demo_1代码学习_复习笔记.md#22-tool-calling)。
+同时核对 SSE 源码、相关依赖实现与文档快照。未调用真实模型、访问业务数据库或重建索引；这些测试不挂载真实页面，也不验证代理、后端会话和工具写入。完整验收见[教学文档流式清单](demo_1代码学习_复习笔记.md#sse-validation)。
